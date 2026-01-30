@@ -1,0 +1,283 @@
+{
+    "name": "Web Fuzzer - Vulnerability Scanner",
+    "nodes": [
+        {
+            "parameters": {},
+            "id": "start-node",
+            "name": "Start",
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [
+                240,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "Enter the URL to scan for vulnerabilities:",
+                "placeholder": "https://example.com"
+            },
+            "id": "input-url",
+            "name": "Get Target URL",
+            "type": "n8n-nodes-base.form",
+            "typeVersion": 1,
+            "position": [
+                440,
+                300
+            ],
+            "disabled": true
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "target_url",
+                            "value": "https://jsonplaceholder.typicode.com"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "set-url",
+            "name": "Set Target URL",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                440,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://localhost:5000/quick-scan",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ \"url\": $json.target_url }) }}",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "id": "scan-request",
+            "name": "Run Vulnerability Scan",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                660,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
+                        {
+                            "id": "check-vulns",
+                            "leftValue": "={{ $json.total_vulnerabilities }}",
+                            "rightValue": 0,
+                            "operator": {
+                                "type": "number",
+                                "operation": "gt"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "check-results",
+            "name": "Vulnerabilities Found?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                880,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "status",
+                            "value": "⚠️ VULNERABILITIES DETECTED"
+                        },
+                        {
+                            "name": "grade",
+                            "value": "={{ $json.grade }}"
+                        },
+                        {
+                            "name": "risk_score",
+                            "value": "={{ $json.risk_score }}/100"
+                        },
+                        {
+                            "name": "total_vulnerabilities",
+                            "value": "={{ $json.total_vulnerabilities }}"
+                        },
+                        {
+                            "name": "report",
+                            "value": "={{ $json.formatted_report }}"
+                        },
+                        {
+                            "name": "target_url",
+                            "value": "={{ $json.target_url }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "format-warning",
+            "name": "Format Warning",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                1100,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "status",
+                            "value": "✅ NO VULNERABILITIES FOUND"
+                        },
+                        {
+                            "name": "grade",
+                            "value": "={{ $json.grade }}"
+                        },
+                        {
+                            "name": "message",
+                            "value": "Great news! No vulnerabilities were detected in the target application."
+                        },
+                        {
+                            "name": "target_url",
+                            "value": "={{ $json.target_url }}"
+                        },
+                        {
+                            "name": "report",
+                            "value": "={{ $json.formatted_report }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "format-success",
+            "name": "Format Success",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                1100,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## 🔒 Web Fuzzer - Security Scanner\n\n### How to use:\n1. **Start the API server** first: `python api_server.py`\n2. **Update the target URL** in the 'Set Target URL' node\n3. **Execute the workflow** to scan for vulnerabilities\n\n### API Endpoints:\n- `POST /quick-scan` - Synchronous scan (used here)\n- `POST /scan` - Async scan (returns scan_id)\n- `GET /scan/<id>` - Get async scan results",
+                "height": 270,
+                "width": 350
+            },
+            "id": "note-1",
+            "name": "Instructions",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                60,
+                140
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## Scan Results\n\nThe scan will return:\n- **grade**: Security grade (A+ to F)\n- **risk_score**: 0-100 score\n- **total_vulnerabilities**: Count of issues\n- **formatted_report**: Human-readable report",
+                "height": 180,
+                "width": 280
+            },
+            "id": "note-2",
+            "name": "Results Info",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                1080,
+                0
+            ]
+        }
+    ],
+    "connections": {
+        "Start": {
+            "main": [
+                [
+                    {
+                        "node": "Set Target URL",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Set Target URL": {
+            "main": [
+                [
+                    {
+                        "node": "Run Vulnerability Scan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Run Vulnerability Scan": {
+            "main": [
+                [
+                    {
+                        "node": "Vulnerabilities Found?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Vulnerabilities Found?": {
+            "main": [
+                [
+                    {
+                        "node": "Format Warning",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Format Success",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+        "instanceId": "web-fuzzer-n8n-workflow"
+    },
+    "tags": [
+        {
+            "name": "Security",
+            "id": "security"
+        },
+        {
+            "name": "Web Fuzzer",
+            "id": "webfuzzer"
+        }
+    ]
+}

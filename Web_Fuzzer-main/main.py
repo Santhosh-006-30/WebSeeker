@@ -8,6 +8,7 @@ from reporting import html_generator, popup
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.panel import Panel
 from rich.table import Table
+from urllib.parse import urlparse
 
 LOGO = r"""
     _    _      _      ______                      
@@ -18,11 +19,62 @@ LOGO = r"""
     \/  \/ \___|_.__/  \_|  \__,_/___/___\___|_|   
                                                    
     Professional Web Vulnerability Scanner
+    [API-Focused Security Testing]
 """
 
 from core.crawler import Crawler
 from core.api_discovery import APIDiscovery
 from analysis.risk import RiskAnalyzer
+
+def filter_api_endpoints(urls):
+    """
+    Filter URLs to only include actual API endpoints.
+    Removes frontend routes (with #), static files, and non-API paths.
+    """
+    api_keywords = ['api', 'rest', 'v1', 'v2', 'v3', 'graphql', 'json', 'data', 
+                    'auth', 'login', 'users', 'admin', 'webhook', 'callback']
+    
+    filtered = []
+    for url in urls:
+        parsed = urlparse(url)
+        
+        # Skip URLs with hash fragments (frontend routes like #about, #tracks)
+        if parsed.fragment and not parsed.path.strip('/'):
+            continue
+        
+        # Skip obvious frontend routes
+        if parsed.fragment in ['about', 'tracks', 'sponsors-list', 'contact', 'community', 
+                                'home', 'features', 'pricing', 'team', 'blog', 'careers']:
+            continue
+            
+        # Remove hash fragment from URL for cleaner endpoints
+        clean_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            clean_url += f"?{parsed.query}"
+        
+        # Skip static files
+        static_ext = ('.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', 
+                     '.ico', '.woff', '.woff2', '.ttf', '.pdf', '.zip')
+        if parsed.path.lower().endswith(static_ext):
+            continue
+        
+        # Skip empty paths (just the root)
+        if not parsed.path or parsed.path == '/':
+            # Include root only if it looks like an API
+            if any(kw in parsed.netloc.lower() for kw in ['api', 'backend', 'server']):
+                filtered.append(clean_url)
+            continue
+        
+        # Check if path looks like an API endpoint
+        path_lower = parsed.path.lower()
+        is_api_like = any(kw in path_lower for kw in api_keywords)
+        
+        # Include if it looks like API or has query parameters (potential for injection)
+        if is_api_like or parsed.query or '/' in parsed.path[1:]:
+            if clean_url not in filtered:
+                filtered.append(clean_url)
+    
+    return filtered
 
 def main():
     console.print(Panel.fit(f"[bold blue]{LOGO}[/bold blue]", border_style="blue"))
@@ -30,6 +82,10 @@ def main():
     # Argument Parsing
     if len(sys.argv) < 2:
         console.print(f"[warning]Usage: python main.py <url>[/warning]")
+        console.print("\n[bold cyan]╭─────────────────────────────────────────────────────────────╮[/bold cyan]")
+        console.print("[bold cyan]│[/bold cyan] [bold yellow]TIP:[/bold yellow] For accurate vulnerability testing, provide an API URL  [bold cyan]│[/bold cyan]")
+        console.print("[bold cyan]│[/bold cyan] Examples: https://api.example.com or https://example.com/api [bold cyan]│[/bold cyan]")
+        console.print("[bold cyan]╰─────────────────────────────────────────────────────────────╯[/bold cyan]\n")
         url = console.input("[bold green]Enter Target URL: [/bold green]").strip()
         if not url:
             sys.exit(1)
@@ -85,35 +141,98 @@ def main():
 
     user_name = "Admin"
     
-    # --- Step 1: Choose Discovery Mode ---
-    console.print("\n[bold cyan]Choose Discovery Mode:[/bold cyan]")
-    console.print("  [1] API Endpoint Discovery (Recommended for testing)")
-    console.print("  [2] Frontend Crawling (Traditional mode)")
+    # --- Check if this looks like a frontend URL ---
+    parsed_url = urlparse(url)
+    is_likely_frontend = not any(kw in parsed_url.path.lower() or kw in parsed_url.netloc.lower() 
+                                  for kw in ['api', 'rest', 'graphql', 'v1', 'v2', 'backend'])
     
-    mode_choice = console.input("\n[bold green]Enter choice (1 or 2): [/bold green]").strip()
+    if is_likely_frontend:
+        console.print("\n[bold yellow]⚠️  This looks like a frontend URL.[/bold yellow]")
+        console.print("[dim]Frontend URLs (like React/Angular apps) often don't have testable vulnerabilities.[/dim]")
+        console.print("[dim]For better results, provide the API backend URL if you know it.[/dim]\n")
+        
+        api_url_input = console.input("[bold green]Enter API Base URL (or press Enter to auto-discover): [/bold green]").strip()
+        
+        if api_url_input:
+            if not api_url_input.startswith("http"):
+                api_url_input = "https://" + api_url_input
+            # Validate the API URL
+            try:
+                api_response = requests.get(api_url_input, timeout=10, verify=False, headers=api_headers)
+                if api_response.status_code < 500:
+                    Colors.success(f"API URL is reachable! [{api_response.status_code}]")
+                    url = api_url_input  # Use the provided API URL
+                else:
+                    Colors.warning("API URL returned an error. Will try to auto-discover endpoints.")
+            except:
+                Colors.warning("Could not reach API URL. Will try to auto-discover endpoints.")
     
-    if mode_choice == "2":
-        # Traditional Frontend Crawling
-        with console.status("[bold green]Crawling target for endpoints...[/bold green]") as status:
-            crawler = Crawler(url)
-            discovered_urls = crawler.crawl(depth=2)
-    else:
-        # API Endpoint Discovery (Default)
-        Colors.info("Starting API Endpoint Discovery...")
-        console.print("[dim]This will analyze JavaScript files, fuzz common API paths, and discover actual API endpoints.[/dim]\n")
+    # --- Step 1: API Endpoint Discovery ---
+    console.print("\n[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]")
+    console.print("[bold cyan]                   API ENDPOINT DISCOVERY                        [/bold cyan]")
+    console.print("[bold cyan]═══════════════════════════════════════════════════════════════[/bold cyan]\n")
+    
+    Colors.info("Starting API Endpoint Discovery...")
+    console.print("[dim]Analyzing JavaScript files, fuzzing common API paths, checking for OpenAPI specs...[/dim]\n")
+    
+    api_discovery = APIDiscovery(url)
+    discovered_urls = api_discovery.discover()
+    
+    # Filter to only API endpoints
+    if discovered_urls:
+        original_count = len(discovered_urls)
+        discovered_urls = filter_api_endpoints(discovered_urls)
+        filtered_count = len(discovered_urls)
         
-        api_discovery = APIDiscovery(url)
-        discovered_urls = api_discovery.discover()
+        if original_count != filtered_count:
+            Colors.info(f"Filtered {original_count} URLs down to {filtered_count} testable API endpoints.")
+    
+    if not discovered_urls:
+        Colors.warning("No API endpoints auto-discovered.")
+        console.print("\n[bold yellow]Would you like to:[/bold yellow]")
+        console.print("  [1] Enter API endpoints manually")
+        console.print("  [2] Try frontend crawling (may find some endpoints)")
+        console.print("  [3] Exit")
         
-        if not discovered_urls:
-            Colors.warning("No API endpoints discovered. Falling back to frontend crawling...")
+        fallback_choice = console.input("\n[bold green]Enter choice (1/2/3): [/bold green]").strip()
+        
+        if fallback_choice == "1":
+            console.print("\n[dim]Enter each API endpoint URL, one per line. Type 'done' when finished.[/dim]")
+            manual_endpoints = []
+            while True:
+                endpoint = console.input("[green]> [/green]").strip()
+                if endpoint.lower() == 'done':
+                    break
+                if endpoint:
+                    if not endpoint.startswith("http"):
+                        endpoint = url.rstrip('/') + '/' + endpoint.lstrip('/')
+                    manual_endpoints.append(endpoint)
+                    Colors.success(f"Added: {endpoint}")
+            discovered_urls = manual_endpoints
+            
+        elif fallback_choice == "2":
+            Colors.info("Falling back to frontend crawling...")
             with console.status("[bold green]Crawling target for endpoints...[/bold green]") as status:
                 crawler = Crawler(url)
                 discovered_urls = crawler.crawl(depth=2)
+            # Filter crawler results too
+            discovered_urls = filter_api_endpoints(discovered_urls)
+        else:
+            Colors.info("Exiting.")
+            sys.exit(0)
     
     if not discovered_urls:
-        Colors.error("No endpoints discovered. Exiting.")
+        Colors.error("No testable endpoints found. Exiting.")
         sys.exit(1)
+    
+    # Display discovered endpoints
+    console.print("\n[bold green]✓ Discovered API Endpoints:[/bold green]")
+    for i, endpoint in enumerate(discovered_urls[:20], 1):
+        console.print(f"  [cyan]{i:2}.[/cyan] {endpoint}")
+    if len(discovered_urls) > 20:
+        console.print(f"  [dim]... and {len(discovered_urls) - 20} more endpoints[/dim]")
+    
+    console.print(f"\n[bold]Total: {len(discovered_urls)} API endpoints ready for testing[/bold]\n")
 
     # --- Scan Registry (Track all module results) ---
     scan_results = {

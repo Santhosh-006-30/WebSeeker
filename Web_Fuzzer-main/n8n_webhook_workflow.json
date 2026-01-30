@@ -1,0 +1,218 @@
+{
+    "name": "Web Fuzzer - Webhook Scanner",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "web-fuzzer-scan",
+                "responseMode": "lastNode",
+                "options": {}
+            },
+            "id": "webhook-trigger",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1.1,
+            "position": [
+                240,
+                300
+            ],
+            "webhookId": "web-fuzzer-webhook"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict"
+                    },
+                    "conditions": [
+                        {
+                            "id": "check-url",
+                            "leftValue": "={{ $json.body.url }}",
+                            "rightValue": "",
+                            "operator": {
+                                "type": "string",
+                                "operation": "notEmpty"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "id": "validate-input",
+            "name": "URL Provided?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [
+                460,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "error",
+                            "value": "URL is required. Send POST request with JSON body containing url field"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "error-response",
+            "name": "Error Response",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                680,
+                420
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "http://localhost:5000/quick-scan",
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{ JSON.stringify({ url: $json.body.url }) }}",
+                "options": {
+                    "timeout": 300000
+                }
+            },
+            "id": "scan-api",
+            "name": "Run Scan",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                680,
+                180
+            ]
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "status",
+                            "value": "={{ $json.grade === 'A+' || $json.grade === 'A' ? 'SECURE' : 'VULNERABILITIES FOUND' }}"
+                        },
+                        {
+                            "name": "target",
+                            "value": "={{ $json.target_url }}"
+                        },
+                        {
+                            "name": "grade",
+                            "value": "={{ $json.grade }}"
+                        },
+                        {
+                            "name": "risk_score",
+                            "value": "={{ $json.risk_score }}"
+                        },
+                        {
+                            "name": "total_vulnerabilities",
+                            "value": "={{ $json.total_vulnerabilities }}"
+                        },
+                        {
+                            "name": "endpoints_scanned",
+                            "value": "={{ $json.endpoints_discovered?.length || 0 }}"
+                        }
+                    ],
+                    "object": [
+                        {
+                            "name": "vulnerability_summary",
+                            "value": "={{ $json.summary }}"
+                        },
+                        {
+                            "name": "top_vulnerabilities",
+                            "value": "={{ $json.vulnerabilities?.slice(0, 5) || [] }}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "format-response",
+            "name": "Format Response",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3,
+            "position": [
+                900,
+                180
+            ]
+        },
+        {
+            "parameters": {
+                "content": "## Web Fuzzer Webhook\n\n### Setup:\n1. Start API server: python api_server.py\n2. Activate this workflow\n3. Copy the webhook URL\n\n### Usage:\nSend POST request to webhook URL with JSON body:\n{\"url\": \"https://example.com\"}",
+                "height": 280,
+                "width": 380
+            },
+            "id": "instructions",
+            "name": "Instructions",
+            "type": "n8n-nodes-base.stickyNote",
+            "typeVersion": 1,
+            "position": [
+                40,
+                100
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "URL Provided?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "URL Provided?": {
+            "main": [
+                [
+                    {
+                        "node": "Run Scan",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Error Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Run Scan": {
+            "main": [
+                [
+                    {
+                        "node": "Format Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+        "instanceId": "web-fuzzer-webhook-workflow"
+    },
+    "tags": [
+        {
+            "name": "Security"
+        },
+        {
+            "name": "API"
+        }
+    ]
+}

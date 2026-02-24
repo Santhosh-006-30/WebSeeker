@@ -8,10 +8,15 @@ try:
 except ImportError:
     HAS_RICH = False
 
-# Scan Settings
-TIMEOUT = 10
-MAX_THREADS = 50
-DELAY = 0.1  # Delay between requests in seconds (to avoid DoS)
+
+# Scan Settings - HYPER SPEED GRANULAR
+TIMEOUT = 4
+MAX_THREADS = 50 # General fallback
+CRAWLER_THREADS = 50
+ENDPOINT_THREADS = 15 # Simultaneous Endpoints being formatted
+PAYLOAD_THREADS = 40 # Simultaneous Payloads per Endpoint
+# Total Concurrency = ENDPOINT_THREADS * PAYLOAD_THREADS ~= 600 reqs/sec peak
+DELAY = 0
 
 # User-Agent Rotation
 USER_AGENTS = [

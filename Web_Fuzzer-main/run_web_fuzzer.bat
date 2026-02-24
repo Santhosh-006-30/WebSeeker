@@ -7,6 +7,6 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [INFO] Starting Web Fuzzer UI...
+echo [INFO] Starting WebSeeker UI...
 python web_app.py
 pause

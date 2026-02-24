@@ -1,8 +1,8 @@
-
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-from config import Colors
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from config import Colors, CRAWLER_THREADS, TIMEOUT
 
 class Crawler:
     def __init__(self, target_url):
@@ -10,60 +10,72 @@ class Crawler:
         self.visited_urls = set()
         self.discovered_urls = []
         self.domain = urlparse(target_url).netloc
+        self.session = requests.Session()
+        self.session.verify = False
 
     def crawl(self, depth=2):
         """
-        Crawls the target URL to discover endpoints.
-        depth: integer (1 = just the page, 2 = one level deep, etc.)
+        Crawls the target URL to discover endpoints using Threaded BFS.
         """
-        Colors.info(f"Starting Crawler on {self.target_url} (Depth: {depth})...")
-        self._crawl_recursive(self.target_url, depth)
+        Colors.info(f"Starting Threaded Crawler on {self.target_url} (Depth: {depth})...")
         
-        # Always ensure the base URL is in the list
-        if self.target_url not in self.discovered_urls:
-             self.discovered_urls.insert(0, self.target_url)
+        # Level 0
+        current_level_urls = {self.target_url}
+        self.discovered_urls.append(self.target_url)
+        self.visited_urls.add(self.target_url)
+
+        for d in range(depth):
+            Colors.info(f"Crawling Level {d+1} with {len(current_level_urls)} URLs...")
+            
+            next_level_urls = set()
+            
+            # Parallel Fetch
+            with ThreadPoolExecutor(max_workers=CRAWLER_THREADS) as executor:
+                future_to_url = {executor.submit(self.fetch_links, url): url for url in current_level_urls}
+                
+                for future in as_completed(future_to_url):
+                    links = future.result()
+                    for link in links:
+                        if link not in self.visited_urls:
+                            self.visited_urls.add(link)
+                            self.discovered_urls.append(link)
+                            next_level_urls.add(link)
+                            # print(f"  [+] Discovered: {link}") # Too noisy for high speed
+            
+            current_level_urls = next_level_urls
+            if not current_level_urls:
+                break
              
         Colors.success(f"Crawler finished. Found {len(self.discovered_urls)} unique endpoints.")
         return self.discovered_urls
 
-    def _crawl_recursive(self, url, current_depth):
-        if current_depth == 0 or url in self.visited_urls:
-            return
-
-        self.visited_urls.add(url)
-        
+    def fetch_links(self, url):
+        found_links = []
         try:
-            response = requests.get(url, timeout=5)
+            response = self.session.get(url, timeout=TIMEOUT)
             if response.status_code != 200:
-                return
+                return []
 
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # --- Extract Links (href) ---
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                full_url = urljoin(url, href)
-                parsed_url = urlparse(full_url)
-
-                # Only crawl within the same domain
-                if parsed_url.netloc == self.domain:
-                    # Filter out static assets usually not interesting for fuzzing
+            # Helper to validate and add
+            def add_if_valid(raw_url):
+                full_url = urljoin(url, raw_url)
+                parsed = urlparse(full_url)
+                if parsed.netloc == self.domain:
+                    # Filter static
                     if not any(full_url.endswith(ext) for ext in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg']):
-                        if full_url not in self.discovered_urls:
-                            self.discovered_urls.append(full_url)
-                            print(f"  [+] Discovered: {full_url}")
-                        
-                        # Recurse
-                        self._crawl_recursive(full_url, current_depth - 1)
-            
-            # --- Extract Forms (action) ---
-            for form in soup.find_all('form', action=True):
-                action = form['action']
-                full_url = urljoin(url, action)
-                if full_url not in self.discovered_urls:
-                    self.discovered_urls.append(full_url)
-                    print(f"  [+] Form Action Found: {full_url}")
+                        found_links.append(full_url)
 
-        except Exception as e:
-            # Colors.warning(f"Error crawling {url}: {e}")
+            # Href
+            for link in soup.find_all('a', href=True):
+                add_if_valid(link['href'])
+            
+            # Form Action
+            for form in soup.find_all('form', action=True):
+                add_if_valid(form['action'])
+
+        except:
             pass
+        
+        return found_links

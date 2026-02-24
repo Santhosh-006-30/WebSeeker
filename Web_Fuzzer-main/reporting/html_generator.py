@@ -32,42 +32,21 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
     elif security_score >= 70: grade, grade_color = "C", "text-yellow-500"
     elif security_score >= 60: grade, grade_color = "D", "text-orange-500"
 
-    # Top Targets Logic
-    endpoint_risk = {}
-    for v in vulnerabilities:
-        ep = v.get("location", "Unknown")
-        display_ep = ep.split("?")[0]
-        if len(display_ep) > 50: display_ep = "..." + display_ep[-45:]
-        
-        weight = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}.get(v.get("severity"), 0)
-        
-        if ep not in endpoint_risk:
-            endpoint_risk[ep] = {"display": display_ep, "count": 0, "score": 0, "criticals": 0}
-        
-        endpoint_risk[ep]["count"] += 1
-        endpoint_risk[ep]["score"] += weight
-        if v.get("severity") == "Critical": endpoint_risk[ep]["criticals"] += 1
-
-    top_targets = sorted(endpoint_risk.values(), key=lambda x: x["score"], reverse=True)[:5]
-
     # Executive Summary Text
     primary_threats = sorted(type_counts.items(), key=lambda x: x[1], reverse=True)[:3]
     threat_text = ", ".join([t[0] for t in primary_threats]) if primary_threats else "None"
     
-    analysis_text = f"The automated security assessment of <strong>{html.escape(url)}</strong> has resulted in a Security Grade of <strong class='{grade_color}'>{grade}</strong> ({security_score}/100). "
+    analysis_text = f"Assessment of <strong>{html.escape(url)}</strong> resulted in a Security Score of <strong class='{grade_color}'>{security_score}/100 ({grade})</strong>. "
     
     if grade in ['A', 'B']:
-        analysis_text += "The application demonstrates a <strong>strong security posture</strong>. Code quality appears high, though continuous monitoring is advised to maintain this baseline. "
+        analysis_text += "The target demonstrates a <strong>strong security posture</strong>. "
     elif grade == 'C':
-        analysis_text += "The application exhibits a <strong>moderate risk profile</strong>. While basic protections are in place, significant gaps exist that could be exploited. "
+        analysis_text += "The target exhibits a <strong>moderate risk profile</strong> with actionable gaps. "
     else:
-        analysis_text += "The application is currently in a <strong>CRITICAL RISK STATE</strong>. Multiple high-severity vulnerabilities were detected. Immediate remediation is required to prevent compromise. "
+        analysis_text += "The target is in a <strong>CRITICAL RISK STATE</strong>. Immediate remediation is required. "
 
     if severity_counts['Critical'] > 0:
-        analysis_text += f"<br><br>Immediate attention is needed for <strong>{severity_counts['Critical']} Critical</strong> vulnerabilities. "
-    
-    if primary_threats:
-        analysis_text += f"The most prevalent attack vectors identified are <strong>{html.escape(threat_text)}</strong>. "
+        analysis_text += f"CRITICAL Findings Detected: <strong>{severity_counts['Critical']}</strong>. "
 
     # Remediation Library
     try:
@@ -88,7 +67,6 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
         "security_score": security_score,
         "grade": grade,
         "grade_color": grade_color,
-        "top_targets": top_targets,
         "analysis": analysis_text
     }
 
@@ -98,25 +76,22 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
     meta_json = json.dumps({"url": url, "user": user, "date": now}).replace("</script>", "<\\/script>")
     fixes_json = json.dumps(fixes_data).replace("</script>", "<\\/script>")
 
-    # Use Raw String Layout to avoid f-string brace conflicts with CSS/JS
+    # Use Raw String Layout
     html_template = r"""
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Audit Report - __URL_PLACEHOLDER__</title>
+    <title>WebSeeker Threat Report - __URL_PLACEHOLDER__</title>
     
-    <!-- Fonts -->
+    <!-- Fonts: Inter + JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Syntax Highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" />
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -130,200 +105,173 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
                         mono: ['JetBrains Mono', 'monospace'],
                     },
                     colors: {
-                        slate: {
-                            850: '#1e293b',
-                            900: '#0f172a',
-                            950: '#020617',
-                        },
-                        primary: {
-                            50: '#f0fdfa',
-                            100: '#ccfbf1',
-                            500: '#14b8a6',
-                            600: '#0d9488',
-                            900: '#134e4a',
-                        }
+                        bg: '#0b1121', // Deep Navy/Black
+                        surface: '#151e32', // Lighter Navy
+                        accent: '#3b82f6', // Corporate Blue
+                        cyber: '#0ea5e9', // Cyber Cyan
+                        danger: '#ef4444',
+                        warning: '#f59e0b',
+                        success: '#10b981',
+                        border: '#1e293b'
                     }
                 }
             }
         }
     </script>
-
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
+        body { background-color: #0b1121; color: #e2e8f0; }
+        
+        /* Cyber-Corp Aesthetics */
+        .glass-panel {
+            background: rgba(21, 30, 50, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(59, 130, 246, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        
+        .neon-border-b { border-bottom: 1px solid rgba(14, 165, 233, 0.3); }
+        .neon-text { text-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+        
+        .vuln-row:hover { background-color: rgba(30, 41, 59, 0.5); }
+        
         /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-track { background: #0b1121; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        
-        .glass {
-            background: rgba(30, 41, 59, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-            border-color: rgba(20, 184, 166, 0.3);
-        }
-
-        pre { margin: 0 !important; border-radius: 0.5rem; }
-        
-        [x-cloak] { display: none !important; }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-300 antialiased h-screen flex overflow-hidden selection:bg-primary-500 selection:text-white">
+<body class="antialiased min-h-screen flex flex-col">
 
-    <!-- Sidebar -->
-    <aside class="w-72 bg-slate-900/50 border-r border-slate-800 flex-shrink-0 flex flex-col z-20 glass">
-        <div class="p-6 flex items-center gap-3 border-b border-slate-800/50">
-            <div class="h-10 w-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-emerald-600 shadow-lg shadow-emerald-900/20 text-white font-bold text-xl">
+    <!-- Navbar -->
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b border-white/5 h-16 flex items-center justify-between px-6">
+        <div class="flex items-center gap-3">
+            <div class="h-8 w-8 rounded bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold shadow-[0_0_15px_rgba(59,130,246,0.5)]">
                 <i class="fa-solid fa-shield-halved"></i>
             </div>
             <div>
-                <h1 class="font-bold text-slate-100 tracking-tight text-lg">WebFuzzer</h1>
-                <p class="text-[10px] font-mono uppercase tracking-widest text-primary-500 font-semibold">Enterprise Report</p>
+                <h1 class="font-bold text-lg tracking-tight text-white">WebSeeker <span class="text-cyber font-mono text-xs">PRO</span></h1>
             </div>
         </div>
-
-        <nav class="flex-1 overflow-y-auto py-6 px-4 space-y-1">
-            <button onclick="router.navigate('dashboard')" id="nav-dashboard" class="nav-item w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 hover:bg-slate-800 hover:text-white text-slate-400">
-                <i class="fa-solid fa-chart-line w-5 text-center"></i>
-                Dashboard
-            </button>
-            
-            <div class="pt-6 pb-2 px-4 text-[10px] font-bold uppercase tracking-widest text-slate-600">Findings</div>
-            <div id="category-nav"></div>
-        </nav>
-
-        <div class="p-4 border-t border-slate-800/50 bg-slate-900/30">
-            <div class="flex items-center gap-3">
-                <div class="h-8 w-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300">
-                    <i class="fa-solid fa-user"></i>
-                </div>
-                <div class="overflow-hidden">
-                    <p class="text-xs font-medium text-white truncate">__USER_NAME__</p>
-                    <p class="text-[10px] text-slate-500 truncate">__SCAN_DATE__</p>
-                </div>
-            </div>
-        </div>
-    </aside>
-
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col min-w-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950">
         
-        <!-- Header -->
-        <header class="h-16 border-b border-slate-800 flex items-center justify-between px-8 bg-slate-950/80 backdrop-blur-sm sticky top-0 z-10">
-            <h2 id="page-title" class="text-lg font-semibold text-slate-100">Executive Dashboard</h2>
+        <div class="flex items-center gap-4">
+             <div class="hidden md:flex flex-col items-end mr-4">
+                <span class="text-xs text-slate-400 uppercase tracking-wider">Target</span>
+                <span class="font-mono text-sm text-cyan-400">__URL_PLACEHOLDER__</span>
+            </div>
+            <button onclick="window.print()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-medium transition-colors shadow-lg shadow-blue-900/50 flex items-center gap-2">
+                <i class="fa-solid fa-file-export"></i> Export Report
+            </button>
+        </div>
+    </nav>
+    
+    <div class="h-16"></div> <!-- Spacer -->
+
+    <main class="container mx-auto p-6 space-y-6">
+    
+        <!-- EXECUTIVE DASHBOARD ROW -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
-            <div class="flex items-center gap-4">
-                <div class="relative group">
-                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary-500 transition-colors"></i>
-                    <input type="text" id="global-search" placeholder="Search findings..." class="bg-slate-900/50 border border-slate-700 text-sm rounded-lg pl-10 pr-4 py-2 w-64 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all placeholder-slate-600 text-slate-200">
+            <!-- Security Score Card -->
+            <div class="lg:col-span-4 glass-panel rounded-xl p-6 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition"><i class="fa-solid fa-crosshairs text-9xl"></i></div>
+                <h2 class="text-slate-400 text-xs font-bold uppercase tracking-widest mb-4">Security Score</h2>
+                <div class="flex items-end gap-2">
+                    <span class="text-7xl font-black text-white" id="score-val">0</span>
+                    <span class="text-xl font-bold text-slate-500 mb-2">/100</span>
+                </div>
+                <!-- Grade Badge -->
+                <div id="grade-badge" class="mt-4 inline-flex items-center px-3 py-1 rounded border bg-opacity-20 text-sm font-bold">
+                    GRADE -
+                </div>
+                <p class="mt-4 text-sm text-slate-400 leading-relaxed" id="exec-summary">Initializing analysis...</p>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="lg:col-span-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Critical -->
+                <div class="glass-panel rounded-xl p-5 border-l-4 border-l-red-500 hover:bg-red-500/5 transition cursor-pointer" onclick="filter('Critical')">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">CRITICAL</div>
+                            <div class="text-3xl font-bold text-white mt-1" id="stat-critical">0</div>
+                        </div>
+                        <i class="fa-solid fa-skull-crossbones text-red-500/50"></i>
+                    </div>
+                </div>
+                <!-- High -->
+                <div class="glass-panel rounded-xl p-5 border-l-4 border-l-orange-500 hover:bg-orange-500/5 transition cursor-pointer" onclick="filter('High')">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">HIGH</div>
+                            <div class="text-3xl font-bold text-white mt-1" id="stat-high">0</div>
+                        </div>
+                        <i class="fa-solid fa-fire text-orange-500/50"></i>
+                    </div>
+                </div>
+                <!-- Medium -->
+                <div class="glass-panel rounded-xl p-5 border-l-4 border-l-yellow-500 hover:bg-yellow-500/5 transition cursor-pointer" onclick="filter('Medium')">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">MEDIUM</div>
+                            <div class="text-3xl font-bold text-white mt-1" id="stat-medium">0</div>
+                        </div>
+                        <i class="fa-solid fa-triangle-exclamation text-yellow-500/50"></i>
+                    </div>
+                </div>
+                <!-- Total -->
+                <div class="glass-panel rounded-xl p-5 border-l-4 border-l-blue-500 hover:bg-blue-500/5 transition cursor-pointer" onclick="filter('all')">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">TOTAL ISSUES</div>
+                            <div class="text-3xl font-bold text-white mt-1" id="stat-total">0</div>
+                        </div>
+                        <i class="fa-solid fa-bug text-blue-500/50"></i>
+                    </div>
+                </div>
+
+                <!-- Chart -->
+                <div class="col-span-2 md:col-span-4 glass-panel rounded-xl p-4 h-40 flex items-center justify-center relative">
+                    <canvas id="vulnChart" style="max-height: 100%; width: 100%;"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- FINDINGS DASHBOARD -->
+        <div class="glass-panel rounded-xl overflow-hidden min-h-[600px] flex flex-col">
+            <!-- Toolbar -->
+            <div class="p-4 border-b border-slate-700/50 flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-900/50">
+                <div class="flex items-center gap-2">
+                    <h3 class="font-bold text-white"><i class="fa-solid fa-list-ul mr-2 text-cyber"></i> Detailed Findings</h3>
+                    <span class="px-2 py-0.5 bg-slate-800 rounded text-xs text-slate-400" id="finding-count-badge">0</span>
                 </div>
                 
-                <button onclick="window.print()" class="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all" title="Print Report">
-                    <i class="fa-solid fa-print"></i>
-                </button>
+                <div class="relative w-full md:w-96">
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"></i>
+                    <input type="text" id="search-input" placeholder="Search vulnerabilities, payloads, URLs..." 
+                           class="w-full bg-slate-950 border border-slate-700 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-200 focus:border-cyber focus:outline-none transition-colors">
+                </div>
             </div>
-        </header>
 
-        <!-- Dynamic Content Area -->
-        <div id="content-area" class="flex-1 overflow-y-auto p-8 scroll-smooth">
-            <!-- Content Injected via JS -->
+            <!-- Table Header -->
+            <div class="grid grid-cols-12 bg-slate-900/80 px-4 py-3 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                <div class="col-span-2">Severity</div>
+                <div class="col-span-3">Vulnerability Type</div>
+                <div class="col-span-6">Location / Endpoint</div>
+                <div class="col-span-1 text-right">Action</div>
+            </div>
+
+            <!-- List Container -->
+            <div id="findings-list" class="divide-y divide-slate-800/50 overflow-y-auto flex-1">
+                <!-- Injected via JS -->
+            </div>
         </div>
 
     </main>
 
-    <!-- Templates -->
-    
-    <!-- Dashboard Template -->
-    <template id="tmpl-dashboard">
-        <div class="max-w-7xl mx-auto space-y-8 animate-[fadeIn_0.5s_ease-out]">
-            
-            <!-- Hero Section -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Score Card -->
-                <div class="lg:col-span-1 glass rounded-2xl p-1 relative overflow-hidden group">
-                    <div class="absolute inset-0 bg-gradient-to-br from-primary-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                    <div class="bg-slate-900/90 h-full rounded-xl p-8 flex flex-col items-center justify-center relative z-10">
-                        <div class="relative mb-4">
-                            <svg class="w-40 h-40 transform -rotate-90">
-                                <circle cx="80" cy="80" r="70" stroke="currentColor" stroke-width="8" fill="transparent" class="text-slate-800" />
-                                <circle cx="80" cy="80" r="70" stroke="currentColor" stroke-width="8" fill="transparent" :class="scoreColor" stroke-dasharray="440" :stroke-dashoffset="440 - (440 * score / 100)" class="transition-all duration-1000 ease-out" id="score-circle" />
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center flex-col">
-                                <span class="text-6xl font-black text-white tracking-tighter" id="grade-display">-</span>
-                                <span class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Grade</span>
-                            </div>
-                        </div>
-                        <div class="text-sm font-medium text-slate-400">Security Score: <span class="font-bold text-white" id="score-display">0</span>/100</div>
-                    </div>
-                </div>
-
-                <!-- Exec Summary -->
-                <div class="lg:col-span-2 glass rounded-2xl p-8 flex flex-col justify-center relative overflow-hidden">
-                    <div class="flex items-center gap-3 mb-4 text-primary-400">
-                        <i class="fa-solid fa-wave-square"></i>
-                        <h3 class="text-sm font-bold uppercase tracking-widest">Analysis Summary</h3>
-                    </div>
-                    <p class="text-slate-300 leading-relaxed text-lg" id="summary-text"></p>
-                </div>
-            </div>
-
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden group hover:border-red-500/50 transition-colors cursor-pointer" onclick="router.filter('Critical')">
-                    <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fa-solid fa-skull text-6xl text-red-500"></i></div>
-                    <div class="text-red-500 text-sm font-bold uppercase tracking-wider mb-1">Critical</div>
-                    <div class="text-4xl font-black text-white" id="stat-critical">0</div>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden group hover:border-orange-500/50 transition-colors cursor-pointer" onclick="router.filter('High')">
-                    <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fa-solid fa-fire text-6xl text-orange-500"></i></div>
-                    <div class="text-orange-500 text-sm font-bold uppercase tracking-wider mb-1">High</div>
-                    <div class="text-4xl font-black text-white" id="stat-high">0</div>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden group hover:border-yellow-500/50 transition-colors cursor-pointer" onclick="router.filter('Medium')">
-                    <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fa-solid fa-triangle-exclamation text-6xl text-yellow-500"></i></div>
-                    <div class="text-yellow-500 text-sm font-bold uppercase tracking-wider mb-1">Medium</div>
-                    <div class="text-4xl font-black text-white" id="stat-medium">0</div>
-                </div>
-                <div class="bg-slate-900 border border-slate-800 p-6 rounded-xl relative overflow-hidden group hover:border-blue-500/50 transition-colors cursor-pointer" onclick="router.filter('all')">
-                    <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fa-solid fa-list-check text-6xl text-blue-500"></i></div>
-                    <div class="text-blue-500 text-sm font-bold uppercase tracking-wider mb-1">Total Issues</div>
-                    <div class="text-4xl font-black text-white" id="stat-total">0</div>
-                </div>
-            </div>
-
-            <!-- Visualizations & Targets -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Charts -->
-                <div class="glass p-6 rounded-xl border border-slate-800">
-                    <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">Vulnerability Distribution</h4>
-                    <div class="h-64"><canvas id="chart-types"></canvas></div>
-                </div>
-                
-                <!-- Top Targets -->
-                <div class="glass p-6 rounded-xl border border-slate-800">
-                    <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-6">High Risk Endpoints</h4>
-                    <div class="space-y-4" id="top-targets-list"></div>
-                </div>
-            </div>
-        </div>
-    </template>
-
     <!-- JS Logic -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
-
     <script>
-        // --- DATA INJECTION ---
         const DATA = {
             stats: __STATS_JSON__,
             findings: __FINDINGS_JSON__,
@@ -331,134 +279,139 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
             meta: __META_JSON__
         };
 
-        // --- ROUTER & STATE ---
-        const router = {
-            view: 'dashboard',
-            filterCat: null,
-            filterSev: null,
-            search: '',
-            
-            navigate(view) {
-                this.view = view;
-                this.filterCat = null;
-                this.filterSev = null;
-                this.search = '';
-                render();
-            },
-            
-            filter(sev) {
-                this.view = 'findings';
-                this.filterSev = sev === 'all' ? null : sev;
-                render();
-            },
-            
-            filterCategory(cat) {
-                this.view = 'findings';
-                this.filterCat = cat;
-                render();
-            }
-        };
+        // --- Render Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initDashboard();
+            renderFindings(DATA.findings);
+            initChart();
+        });
 
-        // --- UTILS ---
-        const getSeverityConfig = (sev) => {
-            switch(sev) {
-                case 'Critical': return { color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: 'fa-skull' };
-                case 'High': return { color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20', icon: 'fa-fire' };
-                case 'Medium': return { color: 'text-yellow-500', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', icon: 'fa-triangle-exclamation' };
-                case 'Low': return { color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: 'fa-info-circle' };
-                default: return { color: 'text-slate-500', bg: 'bg-slate-500/10', border: 'border-slate-500/20', icon: 'fa-circle-question' };
-            }
-        };
-
-        function escapeHtml(unsafe) {
-            if (!unsafe) return '';
-            return unsafe
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
-        // --- RENDERERS ---
-        function render() {
-            const content = document.getElementById('content-area');
-            const pageTitle = document.getElementById('page-title');
+        function initDashboard() {
+            // Stats
+            document.getElementById('score-val').textContent = DATA.stats.security_score;
+            document.getElementById('exec-summary').innerHTML = DATA.stats.analysis;
             
-            // Update Active Nav
-            document.querySelectorAll('.nav-item').forEach(el => {
-                if(router.view === 'dashboard' && el.id === 'nav-dashboard') {
-                    el.classList.add('bg-slate-800', 'text-white');
-                    el.classList.remove('text-slate-400');
-                } else {
-                    el.classList.remove('bg-slate-800', 'text-white');
-                    el.classList.add('text-slate-400');
-                }
+            // Badge Color
+            const gradeColors = {'A': 'bg-emerald-500', 'B': 'bg-blue-500', 'C': 'bg-yellow-500', 'D': 'bg-orange-500', 'F': 'bg-red-500'};
+            const gBadge = document.getElementById('grade-badge');
+            gBadge.textContent = 'GRADE ' + (DATA.stats.grade || 'F');
+            gBadge.classList.add(gradeColors[DATA.stats.grade] || 'bg-slate-500', 'text-white', 'border-transparent');
+
+            // Counts
+            document.getElementById('stat-critical').textContent = DATA.stats.critical;
+            document.getElementById('stat-high').textContent = DATA.stats.high;
+            document.getElementById('stat-medium').textContent = DATA.stats.medium;
+            document.getElementById('stat-total').textContent = DATA.stats.total;
+
+            // Search
+            document.getElementById('search-input').addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase();
+                const filtered = DATA.findings.filter(f => 
+                    f.type.toLowerCase().includes(q) || 
+                    f.location.toLowerCase().includes(q) || 
+                    (f.payload && f.payload.toLowerCase().includes(q))
+                );
+                renderFindings(filtered);
             });
+        }
 
-            if (router.view === 'dashboard') {
-                pageTitle.innerText = "Executive Dashboard";
-                renderDashboard(content);
-            } else if (router.view === 'findings') {
-                pageTitle.innerText = "Security Findings";
-                renderFindings(content);
+        function filter(sev) {
+            if (sev === 'all') {
+                renderFindings(DATA.findings);
+            } else {
+                renderFindings(DATA.findings.filter(f => f.severity === sev));
             }
         }
 
-        function renderDashboard(container) {
-            const tmpl = document.getElementById('tmpl-dashboard').content.cloneNode(true);
+        function renderFindings(list) {
+            const container = document.getElementById('findings-list');
+            document.getElementById('finding-count-badge').textContent = list.length;
             
-            // Fill Stats
-            tmpl.getElementById('grade-display').textContent = DATA.stats.grade;
-            tmpl.getElementById('grade-display').className = `text-6xl font-black tracking-tighter ${
-                { 'A': 'text-emerald-400', 'B': 'text-blue-400', 'C': 'text-yellow-400', 'D': 'text-orange-400', 'F': 'text-red-500' }
-            [DATA.stats.grade] || 'text-slate-400'}`;
-            
-            tmpl.getElementById('score-display').textContent = DATA.stats.security_score;
-            tmpl.getElementById('score-circle').style.strokeDashoffset = 440 - (440 * DATA.stats.security_score / 100);
-            tmpl.getElementById('score-circle').classList.add({
-                'A': 'text-emerald-500', 'B': 'text-blue-500', 'C': 'text-yellow-500', 'D': 'text-orange-500', 'F': 'text-red-500'
-            }[DATA.stats.grade] || 'text-slate-500');
-
-            tmpl.getElementById('summary-text').innerHTML = DATA.stats.analysis;
-            
-            tmpl.getElementById('stat-total').textContent = DATA.stats.total;
-            tmpl.getElementById('stat-critical').textContent = DATA.stats.critical;
-            tmpl.getElementById('stat-high').textContent = DATA.stats.high;
-            tmpl.getElementById('stat-medium').textContent = DATA.stats.medium;
-
-            // Top Targets
-            const targetsContainer = tmpl.getElementById('top-targets-list');
-            if(DATA.stats.top_targets.length === 0) {
-                targetsContainer.innerHTML = '<div class="text-slate-500 text-sm italic">No vulnerable targets found.</div>';
-            } else {
-                DATA.stats.top_targets.forEach(t => {
-                    targetsContainer.innerHTML += `
-                        <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-800 hover:border-slate-700 transition">
-                            <div class="flex items-center gap-3 overflow-hidden">
-                                <span class="h-8 w-8 rounded bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400">${t.count}</span>
-                                <span class="text-sm font-mono text-slate-300 truncate">${escapeHtml(t.display)}</span>
-                            </div>
-                            ${t.criticals > 0 ? `<span class="px-2 py-1 rounded text-xs font-bold bg-red-500/20 text-red-500 border border-red-500/20">${t.criticals} Crit</span>` : ''}
-                        </div>
-                    `;
-                });
+            if (list.length === 0) {
+                container.innerHTML = '<div class="p-8 text-center text-slate-500 italic">No findings match your criteria.</div>';
+                return;
             }
 
-            container.innerHTML = '';
-            container.appendChild(tmpl);
+            container.innerHTML = list.map((f, i) => {
+                const config = getSevConfig(f.severity);
+                // Unique ID for expansion
+                const id = 'vuln-' + Math.random().toString(36).substr(2, 9);
+                
+                return `
+                <div class="vuln-row transition-colors group">
+                    <div class="grid grid-cols-12 px-4 py-4 items-center cursor-pointer" onclick="toggle('${id}')">
+                        <div class="col-span-2">
+                            <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border ${config.bg} ${config.border} ${config.text} text-xs font-bold uppercase shadow-sm">
+                                <i class="fa-solid ${config.icon}"></i> ${f.severity}
+                            </span>
+                        </div>
+                        <div class="col-span-3 text-sm font-semibold text-white group-hover:text-cyber transition-colors">
+                            ${escapeHtml(f.type)}
+                        </div>
+                        <div class="col-span-6 text-xs font-mono text-slate-400 truncate pr-4">
+                            ${escapeHtml(f.location)}
+                        </div>
+                        <div class="col-span-1 text-right">
+                            <i class="fa-solid fa-chevron-down text-slate-600 transition-transform duration-300" id="icon-${id}"></i>
+                        </div>
+                    </div>
+                    
+                    <!-- Expanded Details -->
+                    <div id="${id}" class="hidden bg-slate-950/50 border-y border-slate-800/50 px-4 py-6">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pl-2 border-l-2 border-slate-700 ml-2">
+                            <div class="space-y-4">
+                                <div>
+                                    <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Impact Analysis</h4>
+                                    <p class="text-sm text-slate-300 leading-relaxed">${escapeHtml(f.impact || 'Unknown impact.')}</p>
+                                </div>
+                                <div class="bg-black/40 rounded border border-slate-800 p-3">
+                                    <h4 class="text-[10px] font-bold text-red-400 uppercase mb-2"><i class="fa-solid fa-bug mr-1"></i> Payload Evidence</h4>
+                                    <code class="text-xs font-mono text-red-200 break-all block">${escapeHtml(f.payload || 'N/A')}</code>
+                                </div>
+                            </div>
+                            
+                            <div class="space-y-4">
+                                <div>
+                                    <h4 class="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Remediation Strategy</h4>
+                                    <p class="text-sm text-slate-300">${escapeHtml(f.recommendation || DATA.fixes[f.type]?.recommendation || 'Review code manually.')}</p>
+                                </div>
+                                <div class="p-3 rounded bg-blue-900/10 border border-blue-500/20">
+                                    <h4 class="text-[10px] font-bold text-blue-400 uppercase mb-2">Technical Guidance</h4>
+                                    <pre class="text-[10px] font-mono text-blue-200 overflow-x-auto"><code>${escapeHtml(DATA.fixes[f.type]?.secure_code || '# Secure coding pattern not available')}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
 
-            // Chart
-            const ctx = document.getElementById('chart-types').getContext('2d');
+        function toggle(id) {
+            const el = document.getElementById(id);
+            const icon = document.getElementById('icon-' + id);
+            
+            if (el.classList.contains('hidden')) {
+                el.classList.remove('hidden');
+                icon.classList.add('rotate-180');
+            } else {
+                el.classList.add('hidden');
+                icon.classList.remove('rotate-180');
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('vulnChart').getContext('2d');
             new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: Object.keys(DATA.stats.by_type),
+                    labels: ['Critical', 'High', 'Medium', 'Low'],
                     datasets: [{
-                        label: 'Vulnerabilities',
-                        data: Object.values(DATA.stats.by_type),
-                        backgroundColor: '#0d9488',
-                        borderRadius: 4
+                        label: 'Count',
+                        data: [DATA.stats.critical, DATA.stats.high, DATA.stats.medium, DATA.stats.low],
+                        backgroundColor: ['#ef4444', '#f97316', '#eab308', '#3b82f6'],
+                        borderRadius: 4,
+                        maxBarThickness: 40
                     }]
                 },
                 options: {
@@ -466,139 +419,35 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
                     maintainAspectRatio: false,
                     plugins: { legend: { display: false } },
                     scales: {
-                        y: { grid: { color: '#1e293b' }, ticks: { color: '#94a3b8' } },
-                        x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                        y: { display: false },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { color: '#64748b', font: { size: 10, weight: 'bold' } }
+                        }
                     }
                 }
             });
         }
 
-        function renderFindings(container) {
-            let findings = DATA.findings;
-            
-            // filtering
-            if (router.filterSev) findings = findings.filter(f => f.severity === router.filterSev);
-            if (router.filterCat) findings = findings.filter(f => f.type === router.filterCat);
-            if (router.search) {
-                const q = router.search.toLowerCase();
-                findings = findings.filter(f => 
-                    f.type.toLowerCase().includes(q) || 
-                    f.location.toLowerCase().includes(q) || 
-                    (f.payload && f.payload.toLowerCase().includes(q))
-                );
-            }
-
-            let html = `<div class="max-w-5xl mx-auto space-y-4 animate-[fadeIn_0.3s_ease-out]">`;
-            
-            if (findings.length === 0) {
-                html += `<div class="p-12 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl">No findings match your criteria.</div>`;
-            } else {
-                findings.forEach((f, idx) => {
-                    const conf = getSeverityConfig(f.severity);
-                    const fix = DATA.fixes[f.type] || { secure_code: '# See OWASP guidelines', tips: ['Manual review required'] };
-                    // Simple replacement for dynamic fix code
-                    let secureCode = fix.secure_code.replace(/user_input/g, f.parameter || 'input');
-
-                    html += `
-                    <div class="group bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-all duration-200" id="finding-${idx}">
-                        <div class="p-5 cursor-pointer flex items-start gap-4" onclick="toggleDetails(${idx})">
-                            <div class="mt-1 flex-shrink-0 w-24">
-                                <span class="px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider border ${conf.bg} ${conf.text} ${conf.border} shadow-sm flex items-center justify-center gap-2">
-                                    <i class="fa-solid ${conf.icon}"></i> ${f.severity}
-                                </span>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex justify-between items-start">
-                                    <h3 class="font-bold text-slate-200 text-lg group-hover:text-primary-400 transition-colors">${escapeHtml(f.type)}</h3>
-                                    <i class="fa-solid fa-chevron-down text-slate-600 transition-transform duration-300" id="icon-${idx}"></i>
-                                </div>
-                                <div class="text-xs font-mono text-slate-500 mt-1 truncate">${escapeHtml(f.location)}</div>
-                            </div>
-                        </div>
-                        
-                        <div id="details-${idx}" class="hidden border-t border-slate-800/50 bg-slate-950/30">
-                            <div class="p-6 grid grid-cols-1 xl:grid-cols-2 gap-8">
-                                <div class="space-y-6">
-                                    <div>
-                                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Evidence (Payload)</h4>
-                                        <div class="relative group/code">
-                                            <pre><code class="language-none text-red-300 text-sm">${escapeHtml(f.payload || 'N/A')}</code></pre>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Impact Analysis</h4>
-                                        <p class="text-sm text-slate-400 leading-relaxed">${escapeHtml(f.impact || 'No impact details provided.')}</p>
-                                    </div>
-                                </div>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 text-emerald-500">Recommended Fix</h4>
-                                        <div class="bg-[#1d1f21] rounded-lg border border-slate-800 overflow-hidden">
-                                            <div class="flex justify-between items-center px-3 py-2 border-b border-slate-800 bg-[#252526]">
-                                                <span class="text-[10px] text-slate-500 font-mono">SECURE_CODING_PATTERN</span>
-                                            </div>
-                                            <pre class="!m-0 !bg-transparent"><code class="language-python">${escapeHtml(secureCode)}</code></pre>
-                                        </div>
-                                        <div class="mt-3 flex gap-2">
-                                            ${ (fix.tips || []).map(tip => `<span class="inline-flex items-center px-2 py-1 rounded bg-slate-800 text-[10px] text-slate-400 border border-slate-700"><i class="fa-solid fa-lightbulb text-yellow-500/50 mr-2"></i> ${tip}</span>`).join('') }
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    `;
-                });
-            }
-            html += `</div>`;
-            container.innerHTML = html;
-            Prism.highlightAllUnder(container);
-        }
-
-        function toggleDetails(idx) {
-            const details = document.getElementById(`details-${idx}`);
-            const icon = document.getElementById(`icon-${idx}`);
-            
-            if (details.classList.contains('hidden')) {
-                details.classList.remove('hidden');
-                icon.style.transform = 'rotate(180deg)';
-            } else {
-                details.classList.add('hidden');
-                icon.style.transform = 'rotate(0deg)';
+        function getSevConfig(sev) {
+            switch(sev) {
+                case 'Critical': return { bg: 'bg-red-500/10', border: 'border-red-500/20', text: 'text-red-500', icon: 'fa-skull' };
+                case 'High': return { bg: 'bg-orange-500/10', border: 'border-orange-500/20', text: 'text-orange-500', icon: 'fa-fire' };
+                case 'Medium': return { bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', text: 'text-yellow-500', icon: 'fa-triangle-exclamation' };
+                case 'Low': return { bg: 'bg-blue-500/10', border: 'border-blue-500/20', text: 'text-blue-500', icon: 'fa-info' };
+                default: return { bg: 'bg-slate-500/10', border: 'border-slate-500/20', text: 'text-slate-500', icon: 'fa-question' };
             }
         }
 
-        // --- INIT ---
-        document.addEventListener('DOMContentLoaded', () => {
-            // Build Side Nav
-            const nav = document.getElementById('category-nav');
-            Object.keys(DATA.stats.by_type).sort().forEach(k => {
-                const btn = document.createElement('button');
-                btn.className = 'w-full flex items-center justify-between px-4 py-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors mb-1 group';
-                btn.innerHTML = `<span>${k}</span><span class="bg-slate-800 group-hover:bg-slate-700 px-1.5 py-0.5 rounded text-[10px] text-slate-500 group-hover:text-slate-300 transition">${DATA.stats.by_type[k]}</span>`;
-                btn.onclick = () => router.filterCategory(k);
-                nav.appendChild(btn);
-            });
-
-            // Global Search Listener
-            let searchTimeout;
-            document.getElementById('global-search').addEventListener('input', (e) => {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    router.view = 'findings';
-                    router.search = e.target.value;
-                    render();
-                }, 300);
-            });
-
-            render();
-        });
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>
 """
-    
+
     # Inject Data
     html_content = html_template.replace("__STATS_JSON__", stats_json) \
                                 .replace("__FINDINGS_JSON__", findings_json) \

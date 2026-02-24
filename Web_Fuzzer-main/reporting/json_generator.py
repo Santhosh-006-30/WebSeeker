@@ -8,7 +8,7 @@ class JsonGenerator:
         report_data = {
             "metadata": {
                 "generated_at": datetime.now().isoformat(),
-                "scanner": "Professional Web Fuzzer V2.5",
+                "scanner": "WebSeeker V3.0",
                 "scanned_by": user_name,
                 "target_url": target_url
             },

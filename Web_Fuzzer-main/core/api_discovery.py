@@ -13,10 +13,10 @@ import re
 import json
 from urllib.parse import urljoin, urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import Colors
+from config import Colors, TIMEOUT, MAX_THREADS
 
 class APIDiscovery:
-    def __init__(self, target_url, timeout=10):
+    def __init__(self, target_url, timeout=TIMEOUT):  # Use global fast timeout
         # Parse the URL to extract base components
         parsed = urlparse(target_url)
         
@@ -111,32 +111,66 @@ class APIDiscovery:
         }
 
     def discover(self):
-        """Main discovery method - runs all discovery techniques."""
-        Colors.info("Starting API Endpoint Discovery...")
+        """Main discovery method - runs ALL discovery techniques in PARALLEL for speed."""
+        Colors.info("Starting Fast Parallel API Discovery...")
         
-        # Step 1: Try to find API base paths
-        self._discover_api_bases()
+        # Run all discovery techniques simultaneously for maximum speed
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            # Submit all discovery tasks in parallel
+            futures = {
+                executor.submit(self._discover_api_bases): "API Bases",
+                executor.submit(self._parse_robots_sitemap): "Robots/Sitemap",
+                executor.submit(self._analyze_main_page): "JS Analysis",
+                executor.submit(self._fuzz_common_endpoints_fast): "Endpoint Fuzzing",
+                executor.submit(self._check_framework_endpoints): "Framework Endpoints"
+            }
+            
+            # Wait for all to complete
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    pass  # Continue even if one method fails
         
-        # Step 2: Parse robots.txt and sitemap
-        self._parse_robots_sitemap()
-        
-        # Step 3: Analyze main page for JS files and API calls
-        self._analyze_main_page()
-        
-        # Step 4: Fuzz common endpoints
-        self._fuzz_common_endpoints()
-        
-        # Step 5: Try framework-specific endpoints
-        self._check_framework_endpoints()
-        
-        # Step 6: Analyze discovered endpoints for more paths
-        self._deep_analyze_endpoints()
-        
-        # Filter and return unique, valid endpoints
+        # Quick validation (skip deep analysis for speed)
         valid_endpoints = self._validate_endpoints()
         
-        Colors.success(f"API Discovery Complete. Found {len(valid_endpoints)} valid API endpoints.")
+        Colors.success(f"Fast Discovery Complete. Found {len(valid_endpoints)} API endpoints.")
         return list(valid_endpoints)
+    
+    def _fuzz_common_endpoints_fast(self):
+        """Fast parallel fuzzing of common API endpoints with reduced set."""
+        # Use a smaller, high-value endpoint list for speed
+        priority_endpoints = [
+            'login', 'logout', 'register', 'auth', 'token', 'users', 'user', 
+            'profile', 'account', 'admin', 'dashboard', 'search', 'upload',
+            'api', 'data', 'config', 'settings', 'health', 'status', 'info',
+            'docs', 'swagger', 'graphql', 'posts', 'items', 'orders'
+        ]
+        
+        endpoints_to_check = []
+        base_paths = self.api_base_paths if self.api_base_paths else ['/api', '/api/v1', '']
+        
+        for base in base_paths[:3]:  # Limit base paths for speed
+            for endpoint in priority_endpoints:
+                endpoints_to_check.append(f"{base}/{endpoint}")
+        
+        def check_endpoint_fast(path):
+            try:
+                url = f"{self.target_url}{path}"
+                response = requests.get(url, headers=self.headers, timeout=3, verify=False, allow_redirects=False)
+                if response.status_code not in [404, 301, 302, 0]:
+                    return url
+            except:
+                pass
+            return None
+        
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+            futures = {executor.submit(check_endpoint_fast, path): path for path in endpoints_to_check}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    self.discovered_endpoints.add(result)
 
     def _discover_api_bases(self):
         """Discover which API base paths exist."""
@@ -167,7 +201,7 @@ class APIDiscovery:
             except:
                 return None
         
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             futures = {executor.submit(check_api_base, prefix): prefix for prefix in self.api_prefixes}
             for future in as_completed(futures):
                 result = future.result()
@@ -317,7 +351,7 @@ class APIDiscovery:
         Colors.info(f"Checking {len(endpoints_to_check)} potential endpoints...")
         
         found_count = 0
-        with ThreadPoolExecutor(max_workers=50) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             futures = {executor.submit(check_endpoint, path): path for path in endpoints_to_check}
             for future in as_completed(futures):
                 result = future.result()
@@ -388,7 +422,7 @@ class APIDiscovery:
             except:
                 return None
         
-        with ThreadPoolExecutor(max_workers=30) as executor:
+        with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             futures = {executor.submit(check_framework_endpoint, path): path for path in framework_endpoints}
             for future in as_completed(futures):
                 result = future.result()

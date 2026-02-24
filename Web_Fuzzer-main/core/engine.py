@@ -3,7 +3,7 @@ import sys
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import Colors
+from config import Colors, MAX_THREADS, ENDPOINT_THREADS
 from scanners import sql_injection, xss, auth, sensitive_data, injection, file_attacks, misconfig, ssrf, integrity, csrf
 from reporting import html_generator, json_generator, csv_generator
 from core.crawler import Crawler
@@ -105,8 +105,8 @@ class ScannerEngine:
                 continue
             scanned_bases.add(base_path)
             targets_to_scan.append(target_url)
-            if len(scanned_bases) >= 100:
-                self.log("warning", "Hit limit of 100 unique endpoints.")
+            if len(scanned_bases) >= 500:
+                self.log("warning", "Hit limit of 500 unique endpoints for deep scan.")
                 break
 
         if targets_to_scan:
@@ -124,26 +124,43 @@ class ScannerEngine:
                     "SSRF": []
                 }
                 
-                # Fast Checks
-                endpoint_results["Command Injection"].extend(injection.scan_command_injection(target_url))
-                endpoint_results["Directory Traversal"].extend(file_attacks.scan_directory_traversal(target_url))
-                endpoint_results["IDOR"].extend(misconfig.scan_idor(target_url))
-                
-                # Heavy Checks
-                endpoint_results["SQL Injection"].extend(sql_injection.scan(target_url))
-                endpoint_results["Cross-Site Scripting (XSS)"].extend(xss.scan(target_url))
-                endpoint_results["SSRF"].extend(ssrf.scan_ssrf(target_url))
+                # Parallelize internal scanners
+                scan_tasks = {
+                    "Command Injection": lambda: injection.scan_command_injection(target_url),
+                    "Directory Traversal": lambda: file_attacks.scan_directory_traversal(target_url),
+                    "IDOR": lambda: misconfig.scan_idor(target_url),
+                    "SQL Injection": lambda: sql_injection.scan(target_url),
+                    "Cross-Site Scripting (XSS)": lambda: xss.scan(target_url),
+                    "SSRF": lambda: ssrf.scan_ssrf(target_url)
+                }
+
+                with ThreadPoolExecutor(max_workers=len(scan_tasks)) as internal_executor:
+                    future_to_cat = {internal_executor.submit(func): cat for cat, func in scan_tasks.items()}
+                    for future in as_completed(future_to_cat):
+                         if self.should_stop: break
+                         category = future_to_cat[future]
+                         try:
+                             findings = future.result()
+                             if findings:
+                                 endpoint_results[category].extend(findings)
+                         except Exception:
+                             pass
                 
                 return endpoint_results
 
             total_targets = len(targets_to_scan)
             completed_targets = 0
+            start_time = time.time()
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            executor = ThreadPoolExecutor(max_workers=ENDPOINT_THREADS)
+            try:
                 future_to_url = {executor.submit(scan_endpoint_worker, url): url for url in targets_to_scan}
                 
                 for future in as_completed(future_to_url):
-                    if self.should_stop: break
+                    if self.should_stop: 
+                        self.log("warning", "Stopping scan immediately...")
+                        break
+                    
                     try:
                         data = future.result()
                         for category, findings in data.items():
@@ -153,25 +170,56 @@ class ScannerEngine:
                         self.log("error", f"Scanner generated an exception: {exc}")
                     
                     completed_targets += 1
-                    # self.log("progress", f"Scanned {completed_targets}/{total_targets}")
-                    # Sending percentage for progress bar
+                    
+                    # Calculate ETA
+                    elapsed = time.time() - start_time
+                    if completed_targets > 0:
+                        avg_time = elapsed / completed_targets
+                        remaining_targets = total_targets - completed_targets
+                        eta_seconds = int(remaining_targets * avg_time)
+                        
+                        # Send ETA update
+                        if self.output_callback:
+                            self.output_callback("eta", str(eta_seconds))
+
                     percent = int((completed_targets / total_targets) * 100)
                     self.log("progress", str(percent))
+            finally:
+                # If stopped, kill everything immediately
+                if self.should_stop:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                else:
+                    executor.shutdown(wait=True)
 
         # --- step 3: Global Scanners ---
         if not self.should_stop:
-            self.log("info", "Running Global Configuration Scans...")
-            scan_results["Sensitive Data Exposure"] = sensitive_data.scan(url)
-            scan_results["Broken Authentication"] = auth.scan(url)
+            self.log("info", "Running Global Configuration Scans (Parallel)...")
             
             upload_endpoint = url + "/upload.php"
             check_endpoint = url + "/uploads"
-            scan_results["Insecure File Upload"] = file_attacks.scan_insecure_file_upload(upload_endpoint, check_endpoint)
-            
-            scan_results["Security Misconfiguration"] = misconfig.scan_security_misconfiguration(url)
-            scan_results["Rate Limiting"] = misconfig.scan_multiple_login_attempts(url)
-            scan_results["Integrity Failure"] = integrity.scan(url)
-            scan_results["CSRF"] = csrf.scan(url)
+
+            global_tasks = {
+                "Sensitive Data Exposure": lambda: sensitive_data.scan(url),
+                "Broken Authentication": lambda: auth.scan(url),
+                "Insecure File Upload": lambda: file_attacks.scan_insecure_file_upload(upload_endpoint, check_endpoint),
+                "Security Misconfiguration": lambda: misconfig.scan_security_misconfiguration(url),
+                "Rate Limiting": lambda: misconfig.scan_multiple_login_attempts(url),
+                "Integrity Failure": lambda: integrity.scan(url),
+                "CSRF": lambda: csrf.scan(url)
+            }
+
+            with ThreadPoolExecutor(max_workers=len(global_tasks)) as global_executor:
+                future_to_task = {global_executor.submit(func): name for name, func in global_tasks.items()}
+                
+                for future in as_completed(future_to_task):
+                    if self.should_stop: break
+                    name = future_to_task[future]
+                    try:
+                        results = future.result()
+                        if results:
+                            scan_results[name] = results
+                    except Exception as e:
+                        self.log("error", f"Global scan {name} error: {e}")
 
         # Flatten
         all_vulnerabilities = []
@@ -190,7 +238,17 @@ class ScannerEngine:
 
         # Reporting
         self.log("info", "Generating reports...")
+        gen_start_time = time.time()
+        
+        # Calculate total scan duration
+        total_scan_duration = time.time() - start_time
+        
+        # Pass duration to report generator (assuming it can handle it or we update it)
+        # For now, just logging it as requested "estimated time [calculation]"
         report_path = html_generator.generate_report(user_name, url, enriched_vulnerabilities, scan_summary=scan_results)
+        
+        gen_duration = time.time() - gen_start_time
+        self.log("info", f"Report generated in {gen_duration:.2f} seconds. (Total Scan Time: {total_scan_duration:.2f}s)")
         
         json_gen = json_generator.JsonGenerator()
         json_path = json_gen.generate_report(user_name, url, enriched_vulnerabilities, scan_summary=scan_results)

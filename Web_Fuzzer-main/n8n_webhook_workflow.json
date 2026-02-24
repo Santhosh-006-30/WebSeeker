@@ -1,10 +1,10 @@
 {
-    "name": "Web Fuzzer - Webhook Scanner",
+    "name": "WebSeeker - Webhook Scanner",
     "nodes": [
         {
             "parameters": {
                 "httpMethod": "POST",
-                "path": "web-fuzzer-scan",
+                "path": "webseeker-scan",
                 "responseMode": "lastNode",
                 "options": {}
             },
@@ -16,7 +16,7 @@
                 240,
                 300
             ],
-            "webhookId": "web-fuzzer-webhook"
+            "webhookId": "webseeker-webhook"
         },
         {
             "parameters": {
@@ -144,7 +144,7 @@
         },
         {
             "parameters": {
-                "content": "## Web Fuzzer Webhook\n\n### Setup:\n1. Start API server: python api_server.py\n2. Activate this workflow\n3. Copy the webhook URL\n\n### Usage:\nSend POST request to webhook URL with JSON body:\n{\"url\": \"https://example.com\"}",
+                "content": "## WebSeeker Webhook\n\n### Setup:\n1. Start API server: python api_server.py\n2. Activate this workflow\n3. Copy the webhook URL\n\n### Usage:\nSend POST request to webhook URL with JSON body:\n{\"url\": \"https://example.com\"}",
                 "height": 280,
                 "width": 380
             },
@@ -205,7 +205,7 @@
     },
     "staticData": null,
     "meta": {
-        "instanceId": "web-fuzzer-webhook-workflow"
+        "instanceId": "webseeker-webhook-workflow"
     },
     "tags": [
         {

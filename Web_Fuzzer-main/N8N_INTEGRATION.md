@@ -1,13 +1,13 @@
-# Web Fuzzer n8n Integration
+# WebSeeker n8n Integration
 
-This guide explains how to integrate the Web Fuzzer vulnerability scanner with n8n for automated security scanning workflows.
+This guide explains how to integrate the WebSeeker vulnerability scanner with n8n for automated security scanning workflows.
 
 ## Quick Start
 
 ### 1. Start the API Server
 
 ```bash
-cd D:\Project\36 Hrs\Web_Fuzzer-main\Web_Fuzzer-main
+cd D:\Project\36 Hrs\WebSeeker
 python api_server.py
 ```
 
@@ -61,7 +61,7 @@ Add an **HTTP Request** node with these settings:
 4. Send POST requests to trigger scans:
 
 ```bash
-curl -X POST https://your-n8n-url/webhook/web-fuzzer-scan \
+curl -X POST https://your-n8n-url/webhook/webseeker-scan \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'
 ```

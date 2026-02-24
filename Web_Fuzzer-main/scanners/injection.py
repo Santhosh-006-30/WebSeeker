@@ -24,12 +24,15 @@ def scan_command_injection(url):
     vulnerabilities = []
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from config import MAX_THREADS
+    from config import PAYLOAD_THREADS
 
     vulnerabilities = []
 
-    def test_payload(payload):
-        test_url = f"{url}?cmd={payload}"
+    def test_target(target_data):
+        test_url = target_data['url']
+        payload = target_data['payload']
+        param = target_data['param']
+        
         try:
             response = requester.get(test_url)
             # Stricter checks for RCE
@@ -46,7 +49,7 @@ def scan_command_injection(url):
                 return {
                     "type": "Command Injection",
                     "payload": payload,
-                    "location": f"Parameter: cmd (in URL: {test_url})",
+                    "location": f"Parameter: {param} (in URL: {test_url})",
                     "impact": "Attacker can execute arbitrary system commands, potentially taking over the server.",
                     "severity": "Critical",
                     "recommendation": "Sanitize user input and avoid using unsanitized system commands."
@@ -56,9 +59,17 @@ def scan_command_injection(url):
         return None
 
     # Threaded Scan
-    Colors.info(f"Scanning with {MAX_THREADS} threads...")
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = {executor.submit(test_payload, p): p for p in cmd_payloads}
+    Colors.info(f"Scanning with {PAYLOAD_THREADS} threads...")
+    
+    scan_tasks = []
+    for payload in cmd_payloads:
+        fuzzed_targets = utils.generate_fuzzed_urls(url, payload)
+        for target in fuzzed_targets:
+            target['payload'] = payload
+            scan_tasks.append(target)
+            
+    with ThreadPoolExecutor(max_workers=PAYLOAD_THREADS) as executor:
+        futures = {executor.submit(test_target, t): t for t in scan_tasks}
         for future in as_completed(futures):
             res = future.result()
             if res:

@@ -1,5 +1,5 @@
 {
-    "name": "Web Fuzzer - Vulnerability Scanner",
+    "name": "WebSeeker - Vulnerability Scanner",
     "nodes": [
         {
             "parameters": {},
@@ -181,7 +181,7 @@
         },
         {
             "parameters": {
-                "content": "## 🔒 Web Fuzzer - Security Scanner\n\n### How to use:\n1. **Start the API server** first: `python api_server.py`\n2. **Update the target URL** in the 'Set Target URL' node\n3. **Execute the workflow** to scan for vulnerabilities\n\n### API Endpoints:\n- `POST /quick-scan` - Synchronous scan (used here)\n- `POST /scan` - Async scan (returns scan_id)\n- `GET /scan/<id>` - Get async scan results",
+                "content": "## 🔒 WebSeeker - Security Scanner\n\n### How to use:\n1. **Start the API server** first: `python api_server.py`\n2. **Update the target URL** in the 'Set Target URL' node\n3. **Execute the workflow** to scan for vulnerabilities\n\n### API Endpoints:\n- `POST /quick-scan` - Synchronous scan (used here)\n- `POST /scan` - Async scan (returns scan_id)\n- `GET /scan/<id>` - Get async scan results",
                 "height": 270,
                 "width": 350
             },
@@ -268,7 +268,7 @@
     },
     "staticData": null,
     "meta": {
-        "instanceId": "web-fuzzer-n8n-workflow"
+        "instanceId": "webseeker-n8n-workflow"
     },
     "tags": [
         {
@@ -276,8 +276,8 @@
             "id": "security"
         },
         {
-            "name": "Web Fuzzer",
-            "id": "webfuzzer"
+            "name": "WebSeeker",
+            "id": "webseeker"
         }
     ]
 }

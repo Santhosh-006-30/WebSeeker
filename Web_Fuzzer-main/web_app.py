@@ -7,7 +7,11 @@ import json
 import os
 from core.engine import ScannerEngine
 
-app = Flask(__name__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
+
+app = Flask(__name__, template_folder=TEMPLATES_DIR)
+
 
 # Global state
 scan_state = {

@@ -7,6 +7,7 @@ from config import Colors, CRAWLER_THREADS, TIMEOUT
 class Crawler:
     def __init__(self, target_url):
         self.target_url = target_url
+        self.base_url = target_url
         self.visited_urls = set()
         self.discovered_urls = []
         self.domain = urlparse(target_url).netloc
@@ -56,7 +57,11 @@ class Crawler:
             if response.status_code != 200:
                 return []
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+            try:
+                soup = BeautifulSoup(response.text, 'lxml')
+            except Exception:
+                soup = BeautifulSoup(response.text, 'html.parser')
+
             
             # Helper to validate and add
             def add_if_valid(raw_url):

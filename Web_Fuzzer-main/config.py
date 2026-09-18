@@ -9,13 +9,13 @@ except ImportError:
     HAS_RICH = False
 
 
-# Scan Settings - HYPER SPEED GRANULAR
-TIMEOUT = 4
-MAX_THREADS = 50 # General fallback
-CRAWLER_THREADS = 50
-ENDPOINT_THREADS = 15 # Simultaneous Endpoints being formatted
-PAYLOAD_THREADS = 40 # Simultaneous Payloads per Endpoint
-# Total Concurrency = ENDPOINT_THREADS * PAYLOAD_THREADS ~= 600 reqs/sec peak
+# Scan Settings - HYPER SPEED EXTREME
+TIMEOUT = 3              # Reduced: fast fail on dead endpoints
+MAX_THREADS = 50
+CRAWLER_THREADS = 60     # More crawler parallelism
+ENDPOINT_THREADS = 30    # 2x: more simultaneous endpoints
+PAYLOAD_THREADS = 60     # 1.5x: more payload parallelism
+# Total Concurrency = ENDPOINT_THREADS * PAYLOAD_THREADS ~= 1800 reqs/sec peak
 DELAY = 0
 
 # User-Agent Rotation

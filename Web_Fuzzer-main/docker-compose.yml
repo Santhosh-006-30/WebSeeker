@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  webseeker:
+    build: .
+    container_name: webseeker_pro
+    ports:
+      - "5000:5000"
+    environment:
+      - ENVIRONMENT=development
+    volumes:
+      - .:/app # Helpful for development to see changes immediately
+      # Note: For production, remove the volume mount to use only the copied code
+    restart: unless-stopped
+    command: python main.py

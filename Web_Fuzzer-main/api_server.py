@@ -62,16 +62,20 @@ def run_scan(scan_id, target_url):
         scan_status[scan_id]["message"] = "Validating target..."
         scan_status[scan_id]["progress"] = 5
         
-        try:
-            response = requests.get(target_url, timeout=30, verify=False, headers=headers)
+        import utils
+        final_url, response = utils.validate_and_normalize_target(target_url, timeout=15)
+        if final_url and response:
+            target_url = final_url
+            results["target_url"] = target_url
             results["target_status"] = response.status_code
             results["target_reachable"] = True
-        except Exception as e:
+        else:
             results["target_reachable"] = False
-            results["error"] = f"Could not reach target: {str(e)}"
-            scan_status[scan_id] = {"status": "failed", "progress": 100, "message": str(e)}
+            results["error"] = f"Could not reach target: {target_url}"
+            scan_status[scan_id] = {"status": "failed", "progress": 100, "message": f"Could not reach target '{target_url}' via HTTP or HTTPS"}
             scan_results[scan_id] = results
             return
+
         
         # Step 2: Discover API endpoints
         scan_status[scan_id]["message"] = "Discovering API endpoints..."

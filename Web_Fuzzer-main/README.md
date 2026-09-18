@@ -1,50 +1,67 @@
-# WebSeeker - Enterprise Grade API Security Scanner
+# WebSeeker Pro - Advanced Agentic Security Scanner
 
-![Security Score A](https://img.shields.io/badge/Security_Score-A-brightgreen?style=flat-square) ![Python Version](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square)
+![Security Score A](https://img.shields.io/badge/Security_Score-A-brightgreen?style=flat-square) ![Python Version](https://img.shields.io/badge/Python-3.9+-blue?style=flat-square) ![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square) ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square)
 
-**WebSeeker** is a powerful, automated API vulnerability scanner designed for security professionals and developers. It helps identify critical security flaws in web applications and APIs before attackers do.
+**WebSeeker Pro** is an enterprise-grade, multi-threaded automated API vulnerability scanner. Designed for security engineers and modern startups, it aggressively maps attack surfaces, intelligently identifies endpoints, and executes parallelized payloads to uncover critical security flaws before attackers do.
 
-## 🚀 Features
+## 🚀 Key Capabilities
 
-- **Comprehensive Scanning**: Detects SQL Injection, XSS, SSRF, IDOR, Misconfigurations, and more.
-- **Intelligent Analysis**: Calculates a "Security Grade" (A-F) based on findings.
-- **Professional Reporting**: Generates interactive HTML, JSON, and CSV reports.
-- **Top Vulnerable Endpoints**: Automatically identifies the most critical areas of your application.
-- **Remediation Guides**: Provides developer-friendly code fixes for every vulnerability found.
-- **Parallel Processing**: Multi-threaded architecture for fast and efficient scanning.
+- **Massive Parallelism**: Spins up hundreds of lightweight threads to test endpoints and payloads simultaneously.
+- **Agentic Logic**: Avoids blind spraying; intelligently discovers and verifies backend logic flaws.
+- **Cyber-Corporate Dashboard**: Generates a stunning interactive HTML report tailored for both Executives (Grades/Scores) and Developers (Code Fixes/Payloads).
+- **OWASP Top 10 Coverage**: Comprehensive checks for SQLi, XSS, SSRF, IDOR, LFI/RFI, and Auth Bypass.
+- **Zero-Friction Deployment**: Fully Dockerized with CI/CD GitHub Actions built-in.
 
-## 🛠️ Installation
+---
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/yourusername/webseeker.git
-    cd WebSeeker
-    ```
+## ⚡ Quickstart
 
-2.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Option 1: Docker (Recommended)
+The fastest way to get started without polluting your local environment.
 
-## ⚡ Usage
+```bash
+git clone https://github.com/yourusername/webseeker.git
+cd WebSeeker
+docker-compose up --build
+```
+Navigate to `http://localhost:5000` to access the Web UI Dashboard.
 
-Run the scanner against a target URL:
+### Option 2: Local Python Environment
+Ensure you have Python 3.9+ installed.
 
+```bash
+git clone https://github.com/yourusername/webseeker.git
+cd WebSeeker
+pip install -r requirements.txt
+```
+
+#### Run the Web UI
+```bash
+python web_app.py
+```
+
+#### Run the CLI Scanner
 ```bash
 python main.py https://example.com
 ```
 
-### Options
+---
 
-The scanner is designed to be interactive and easy to use. Simply provide the URL, and let the tool do the heavy lifting.
+## 📁 Repository Structure
 
-## 📊 Reports
+- `core/`: The multi-threaded engine, crawler, API discovery, and centralized logger.
+- `scanners/`: Individual vulnerability detection modules (SQLi, XSS, etc.).
+- `reporting/`: Generators for the hybrid Cyber-Corporate HTML dashboard, JSON, and CSV.
+- `Payloads/`: Comprehensive, categorized directories of attack payloads.
+- `ARCHITECTURE.md`: Detailed breakdown of the multi-threaded scanning design.
 
-After a scan is complete, reports are automatically generated in the root directory:
+---
 
--   `report.html`: Interactive dashboard with graphs and detailed findings.
--   `report.json`: Machine-readable format for integration with other tools.
--   `report.csv`: Spreadsheet-friendly format for auditing.
+## 📊 Beautiful Reporting
+
+WebSeeker Pro generates an interactive, dark-themed dashboard (`report.html`) in the root directory upon scan completion. 
+- **Executives**: Instantly see a 0-100 Security Score and Grade (A-F).
+- **Engineers**: Filter by critical findings, view exact payload evidence, and copy-paste secure code remediation snippets.
 
 ## 🔐 Project Methodology: Correct Identification of Web Application Vulnerabilities
 

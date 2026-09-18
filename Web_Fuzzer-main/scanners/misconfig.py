@@ -1,144 +1,138 @@
 
 import requests
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.network import requester
 from config import Colors
 
-# CSRF Logic moved to scanners/csrf.py
-# def scan_csrf(url):
-#     ...
+# ── Sensitive file list (expanded) ───────────────────────────────────────────
+SENSITIVE_FILES = [
+    "/robots.txt", "/.git/", "/.git/config", "/.htaccess", "/.env",
+    "/.DS_Store", "/config.php", "/config.json", "/web.config",
+    "/backup.zip", "/backup.sql", "/database.sql", "/dump.sql",
+    "/admin/", "/dashboard/", "/phpinfo.php", "/info.php",
+    "/aws.yml", "/docker-compose.yml", "/Dockerfile",
+    "/id_rsa", "/id_rsa.pub", "/known_hosts",
+    "/sitemap.xml", "/trace.axd", "/server-status",
+    "/.svn/entries", "/crossdomain.xml", "/clientaccesspolicy.xml",
+    "/server-info", "/elmah.axd", "/api/swagger.json",
+    "/swagger/index.html", "/api-docs", "/openapi.json",
+]
+
 
 def scan_idor(url):
+    """IDOR check — parallel ID probing."""
     vulnerabilities = []
     test_ids = [1, 2, 999, 1000]
-    Colors.info("Testing for IDOR...")
-    
-    for test_id in test_ids:
-        test_url = url.replace("{id}", str(test_id))
+
+    def probe(tid):
+        test_url = url.replace("{id}", str(tid))
         response = requester.get(test_url, allow_redirects=False)
-        
-        if response and response.status_code != 403 and response.status_code != 401:
-             vulnerabilities.append({
+        if response and response.status_code not in (403, 401, 404):
+            return {
                 "type": "Insecure Direct Object Reference (IDOR)",
                 "payload": test_url,
-                "location": f"URL Path (ID Parameter)",
+                "location": "URL Path (ID Parameter)",
                 "impact": "Attacker can access unauthorized data by modifying ID parameters.",
                 "severity": "High",
                 "recommendation": "Implement proper authorization checks before granting access to resources."
-            })
+            }
+        return None
+
+    with ThreadPoolExecutor(max_workers=len(test_ids)) as ex:
+        for r in as_completed([ex.submit(probe, i) for i in test_ids]):
+            v = r.result()
+            if v:
+                vulnerabilities.append(v)
+
     return vulnerabilities
 
+
 def scan_security_misconfiguration(url):
+    """Parallel sensitive-file probing + header analysis."""
     vulnerabilities = []
-    sensitive_files = [
-        "/robots.txt", "/.git/", "/.htaccess", "/.env", "/.DS_Store", 
-        "/config.php", "/config.json", "/web.config", 
-        "/backup.zip", "/backup.sql", "/database.sql", "/dump.sql",
-        "/admin/", "/dashboard/", "/phpinfo.php", "/info.php",
-        "/aws.yml", "/docker-compose.yml", "/Dockerfile", 
-        "/id_rsa", "/id_rsa.pub", "/known_hosts",
-        "/sitemap.xml", "/trace.axd", "/server-status"
-    ]
-    Colors.info("Testing for Security Misconfigurations...")
 
-    for file in sensitive_files:
-        test_url = url + file
-        response = requester.get(test_url)
-        if response and response.status_code == 200:
-             Colors.vuln(f"Exposed file found: {file}")
-             vulnerabilities.append({
-                "type": "Security Misconfiguration",
-                "payload": file,
-                "location": f"URL Path: {test_url}",
-                "impact": "Exposure of sensitive configuration files.",
-                "severity": "Medium",
-                "recommendation": "Restrict public access to sensitive files and configure proper access control."
-            })
+    def probe_file(file):
+        test_url = url.rstrip('/') + file
+        try:
+            response = requester.get(test_url)
+            if response and response.status_code == 200 and len(response.content) > 0:
+                return {
+                    "type": "Security Misconfiguration",
+                    "payload": file,
+                    "location": f"URL Path: {test_url}",
+                    "impact": "Exposure of sensitive configuration files.",
+                    "severity": "Medium",
+                    "recommendation": "Restrict public access to sensitive files and configure proper access control."
+                }
+        except Exception:
+            pass
+        return None
 
-    # Headers (A09 & A06)
+    # Probe all files in parallel
+    with ThreadPoolExecutor(max_workers=30) as ex:
+        futures = [ex.submit(probe_file, f) for f in SENSITIVE_FILES]
+        for future in as_completed(futures):
+            v = future.result()
+            if v:
+                vulnerabilities.append(v)
+
+    # Header checks (single request)
     response = requester.get(url)
     if response:
-        # A06: Server Version
-        if "server" in response.headers:
-            server_info = response.headers["server"]
-            if any(char.isdigit() for char in server_info): 
-                vulnerabilities.append({
-                    "type": "Vulnerable and Outdated Components",
-                    "payload": f"Server Header: {server_info}",
-                    "evidence": f"Header Value: {server_info}",
-                    "location": "HTTP Response Header",
-                    "impact": "Disclosure of server version helps attackers exploit known vulnerabilities in outdated components.",
-                    "severity": "Low",
-                    "recommendation": "Remove Server header banner or update to the latest secure version."
-                })
-        
-        # A09: Security Logging & Monitoring Failures
-        # Check for Correlation IDs (Standard in mature monitoring setups)
+        server_info = response.headers.get("server", "")
+        if server_info and any(c.isdigit() for c in server_info):
+            vulnerabilities.append({
+                "type": "Vulnerable and Outdated Components",
+                "payload": f"Server Header: {server_info}",
+                "evidence": f"Header Value: {server_info}",
+                "location": "HTTP Response Header",
+                "impact": "Disclosure of server version helps attackers exploit known vulnerabilities.",
+                "severity": "Low",
+                "recommendation": "Remove Server header banner or update to the latest secure version."
+            })
+
         headers_lower = {k.lower(): v for k, v in response.headers.items()}
         if "x-request-id" not in headers_lower and "x-correlation-id" not in headers_lower:
-             # This is a "Best Practice" or "Info" finding usually, but for OWASP compliance request we report it.
-             vulnerabilities.append({
+            vulnerabilities.append({
                 "type": "Logging Failure",
                 "payload": "Missing X-Request-ID/X-Correlation-ID",
                 "location": "HTTP Response Header",
-                "impact": "Lack of request correlation identifiers makes incident response and forensic analysis difficult (A09).",
-                "severity": "Low", # Info
-                "recommendation": "Implement centralized logging with unique request identifiers (e.g. UUIDs) for all transactions."
+                "impact": "Lack of request correlation identifiers makes incident response difficult (A09).",
+                "severity": "Low",
+                "recommendation": "Implement centralized logging with unique request identifiers for all transactions."
             })
+
     return vulnerabilities
 
-def scan_multiple_login_attempts(url):
-    vulnerabilities = []
-    MAX_ATTEMPTS = 5
-    LOGIN_URL = "/login"
-    LOGIN_PAYLOAD = {'username': 'admin', 'password': 'incorrect'}
-    
-    Colors.info("Testing for Rate Limiting (Brute Force)...")
-    
-    for attempt in range(MAX_ATTEMPTS + 1):
-        # We need to measure response/behavior, simply posting repeatedly
-        # Simplified logic compared to the complex time-tracking class for demo
-        try:
-             # Using pure requests to avoid our wrapper's delay which defeats the purpose of test? 
-             # Actually wrapper delay is good, but here we want to TEST valid rate limiting.
-             # We should probably use raw requests here to be fast.
-            response = requests.post(url + LOGIN_URL, data=LOGIN_PAYLOAD, timeout=5)
-            # Mock check: if response says "Too many requests" or 429
-            if response.status_code == 429 or "too many" in response.text.lower():
-                 # Rate limit triggers, expected behavior -> No vuln
-                 break 
-            
-            # If we reached max without blocking (and lets say we assume it should block by 5)
-            # This logic is tricky without a real server responding to it.
-            # Preserving the "vulnerability found" logic if it DOESN'T block?
-            # Original code checked if attempts in timeframe > max. 
-            pass 
-        except:
-            pass
 
-    # Re-adding the original simplified logic or just a placeholder since we don't have state here easily
-    # The original file used a global dict `login_attempts` which only works if the script acts as a SERVER or tracking OWN requests?
-    # The original script tracked ITS OWN timestamps in `login_attempts` dict which is for server side logic usually.
-    # Ah, the original script was weird. It checked "if len > max: vuln". It simulates the CHECK.
-    # I will adapt it to report if we can just Keep Hitting it.
-    
-    # Check if we can hit it 10 times rapidly
-    hits = 0
-    for i in range(10):
+def scan_multiple_login_attempts(url):
+    """Rate-limiting check — parallel rapid login attempts."""
+    vulnerabilities = []
+    LOGIN_URL = url.rstrip('/') + "/login"
+    LOGIN_PAYLOAD = {'username': 'admin', 'password': 'incorrect_test_pass'}
+
+    def attempt(_):
         try:
-            r = requests.post(url + LOGIN_URL, data=LOGIN_PAYLOAD, timeout=2)
-            if r.status_code != 429:
-                hits += 1
-        except: pass
-        
-    if hits == 10:
-         vulnerabilities.append({
+            r = requests.post(LOGIN_URL, data=LOGIN_PAYLOAD, timeout=3, verify=False)
+            return r.status_code
+        except Exception:
+            return None
+
+    # Fire 10 rapid login attempts in parallel
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futures = [ex.submit(attempt, i) for i in range(10)]
+        statuses = [f.result() for f in as_completed(futures)]
+
+    non_blocked = [s for s in statuses if s is not None and s != 429]
+    if len(non_blocked) >= 8:
+        vulnerabilities.append({
             "type": "Brute Force / Multiple Login Attempts",
-            "payload": "High frequency login attempts",
-            "location": f"Login Endpoint: {url+LOGIN_URL}",
+            "payload": "High frequency login attempts (10 parallel)",
+            "location": f"Login Endpoint: {LOGIN_URL}",
             "impact": "Attacker can guess passwords via brute force or credential stuffing.",
             "severity": "Medium",
-            "recommendation": "Implement rate limiting and blocking mechanisms for login attempts."
+            "recommendation": "Implement rate limiting and account lockout mechanisms for failed login attempts."
         })
-        
+
     return vulnerabilities

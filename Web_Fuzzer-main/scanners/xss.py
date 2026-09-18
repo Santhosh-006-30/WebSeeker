@@ -47,57 +47,61 @@ COMPREHENSIVE_XSS_PAYLOADS = [
 ]
 
 def scan(url):
-    """Comprehensive XSS scanner with context detection."""
+    """Optimised XSS scanner with early-exit per vulnerable param."""
     if not utils.check_endpoint_alive(url):
         return []
 
-    import random
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    xss_payloads = COMPREHENSIVE_XSS_PAYLOADS.copy()
+
+    xss_payloads = list(set(COMPREHENSIVE_XSS_PAYLOADS))
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        payload_dir = os.path.join(base_dir, "Payloads", "XSS_payload")
-        extra_payloads = utils.load_payloads_from_dir(payload_dir, extensions=[".txt"])
-        if extra_payloads:
-            xss_payloads.extend(extra_payloads)  # Unlocked: scan all payloads
-    except:
+        extra = utils.load_payloads_from_dir(
+            os.path.join(base_dir, "Payloads", "XSS_payload"), extensions=[".txt"]
+        )
+        if extra:
+            xss_payloads = list(set(xss_payloads + extra))
+    except Exception:
         pass
-    
-    xss_payloads = list(set(xss_payloads))
-    
+
     vulnerabilities = []
-    
+    found_params = set()   # early-exit: skip once param is confirmed
+    found_lock = threading.Lock()
+
     def test_target(target_data):
         test_url = target_data['url']
-        payload = target_data['payload']
-        param = target_data['param']
-        
+        payload  = target_data['payload']
+        param    = target_data['param']
+        param_key = (test_url.split('?')[0], param)
+
+        with found_lock:
+            if param_key in found_params:
+                return None
+
         try:
-            response = requester.get(test_url, timeout=5)
+            response = requester.get(test_url, timeout=4)
             if response and payload in response.text:
-                # Basic check: if payload is exactly reflected, it might be XSS.
-                # In a real deep scanner, we'd check for escaping. 
-                # For now, we assume if the complex payloads are returned as-is, it's vulnerable.
-                
                 info = utils.get_vuln_details("Cross-Site Scripting (XSS)")
+                with found_lock:
+                    found_params.add(param_key)
                 return {
                     "type": "Cross-Site Scripting (XSS)",
                     "payload": payload,
-                    "evidence": f"Payload reflected in response",
+                    "evidence": "Payload reflected in response",
                     "location": f"Parameter: {param} (URL: {test_url})",
                     "endpoint": url,
                     "parameter": param,
-                    "confidence": "Medium", # Medium because we don't verify execution
+                    "confidence": "Medium",
                     "impact": info["impact"],
                     "severity": "Medium",
                     "recommendation": info["recommendation"]
                 }
-        except:
+        except Exception:
             pass
         return None
-    
+
+
     # Generate tasks
     scan_tasks = []
     for payload in xss_payloads:

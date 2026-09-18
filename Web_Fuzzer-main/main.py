@@ -49,54 +49,21 @@ def main():
     else:
         url = sys.argv[1]
 
-    if not url.startswith("http"):
-        url = "http://" + url
-    
     # --- Step 0: Validate Target URL ---
-    import requests
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    
-    # Headers for API requests
-    api_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/html, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive',
-    }
-    
+    import utils
     Colors.info(f"Validating target: {url}...")
     
-    # Retry logic for cold-start servers (like Render free tier)
-    max_retries = 3
-    response = None
-    
-    for attempt in range(max_retries):
-        try:
-            # Check connectivity with proper headers
-            response = requests.get(url, timeout=30, verify=False, headers=api_headers)
-            Colors.success(f"Target is online! [{response.status_code}]")
-            break
-        except requests.exceptions.RequestException as e:
-            if attempt < max_retries - 1:
-                Colors.warning(f"Connection attempt {attempt + 1} failed. Retrying in 1 second...")
-                time.sleep(1)
-            else:
-                Colors.error(f"Could not connect to target after {max_retries} attempts: {e}")
-                Colors.error("Please check the URL is correct and reachable.")
-                sys.exit(1)
-    
-    if response:
-        # Handle Redirects
-        if response.url != url:
-            Colors.warning(f"Redirected to: {response.url}")
-            choice = console.input(f"[warning]Do you want to scan this redirected URL? (y/n): [/warning]").strip().lower()
-            if choice == 'y' or choice == '':
-                url = response.url
-            else:
-                Colors.info("Keeping original URL (Warning: Scan might be less effective).")
+    final_url, response = utils.validate_and_normalize_target(url, timeout=15)
+    if not final_url or not response:
+        Colors.error(f"Could not connect to target '{url}' via HTTP or HTTPS.")
+        Colors.error("Please check the URL is correct and reachable.")
+        sys.exit(1)
+        
+    url = final_url
+    Colors.success(f"Target is online! [{response.status_code}] -> {url}")
 
     user_name = "Admin"
+
     
     # --- Check if this looks like a frontend URL ---
     from urllib.parse import urlparse

@@ -14,7 +14,9 @@ scan_state = {
     "is_running": False,
     "progress": 0,
     "result": None,
-    "active_engine": None
+    "active_engine": None,
+    "start_time": None,
+    "endpoint_count": 0
 }
 # Using a list of queues for multiple potential listeners (browser tabs)
 listeners = []
@@ -31,6 +33,7 @@ def scan_worker(url):
     scan_state["is_running"] = True
     scan_state["progress"] = 0
     scan_state["result"] = None
+    scan_state["start_time"] = time.time()
 
     def callback(type, message):
         timestamp = time.strftime("%H:%M:%S")
@@ -72,8 +75,9 @@ def scan_worker(url):
         scan_state["active_engine"] = engine
         results = engine.run_scan(url)
         scan_state["result"] = results
-        # Send completion event
-        broadcast_message(f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n")
+        # Send completion event — include vulnerability list for findings dashboard
+        payload = dict(results) if results else {}
+        broadcast_message(f"data: {json.dumps({'type': 'complete', 'results': payload})}\n\n")
         print("\nScan complete.\n")
     except Exception as e:
         broadcast_message(f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n")
@@ -109,6 +113,18 @@ def stop_scan():
         return jsonify({"status": "success", "message": "Stopping scan..."})
     return jsonify({"status": "error", "message": "No scan running."})
 
+@app.route('/status')
+def status():
+    elapsed = 0
+    if scan_state["start_time"]:
+        elapsed = int(time.time() - scan_state["start_time"])
+    return jsonify({
+        "is_running": scan_state["is_running"],
+        "progress": scan_state["progress"],
+        "elapsed_seconds": elapsed,
+        "has_result": scan_state["result"] is not None
+    })
+
 @app.route('/stream')
 def stream():
     def event_stream():
@@ -135,6 +151,7 @@ def download_report(filename):
 if __name__ == '__main__':
     import webbrowser
     import signal
+    import sys
     
     def signal_handler(sig, frame):
         print("\nStopping Web UI...")

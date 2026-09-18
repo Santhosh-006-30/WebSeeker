@@ -13,44 +13,43 @@ class ScannerEngine:
     def __init__(self, output_callback=None):
         """
         output_callback: function(message_type, message_content)
-        message_type: 'info', 'warning', 'error', 'success', 'progress'
+        message_type: 'info', 'warning', 'error', 'success', 'progress', 'eta'
         """
         self.output_callback = output_callback
         self.should_stop = False
+        from core.logger import log as standard_logger
+        self._sys_logger = standard_logger
 
     def log(self, type, message):
+        # 1. Send to standard Python logger (console + file)
+        # Progress and ETA don't really need to be in the durable log file every second,
+        # but info/warnings/errors do.
+        if type == "info" or type == "success":
+            self._sys_logger.info(message)
+        elif type == "warning":
+            self._sys_logger.warning(message)
+        elif type == "error":
+            self._sys_logger.error(message)
+
+        # 2. Send to Web UI callback (if running in web mode)
         if self.output_callback:
             self.output_callback(type, message)
-        else:
-            # Fallback for when running standalone (if needed)
-            pass
 
     def stop(self):
         self.should_stop = True
 
     def run_scan(self, url, user_name="Admin"):
-        if not url.startswith("http"):
-            url = "http://" + url
-        
+        import utils
         self.log("info", f"Validating target: {url}...")
         
-        try:
-            response = requests.get(url, timeout=10, verify=False)
-            self.log("success", f"Target is online! [{response.status_code}]")
-            
-            if response.url != url:
-                self.log("warning", f"Redirected to: {response.url}")
-                # For automated engine, we usually follow redirects or stick to original.
-                # Here we will follow specific logic or just notify.
-                # For now, let's update url if redirected? 
-                # In main.py it asks user. Here we'll stick to provided URL unless we decide otherwise.
-                # Let's just create a notify.
-                url = response.url # Auto-follow for web scanner simplicity
-                self.log("info", f"Following redirect to: {url}")
-
-        except requests.exceptions.RequestException as e:
-            self.log("error", f"Could not connect to target: {e}")
+        final_url, response = utils.validate_and_normalize_target(url, timeout=10, logger_func=self.log)
+        if not final_url or not response:
+            self.log("error", f"Could not connect to target '{url}' via HTTP or HTTPS.")
             return None
+        
+        url = final_url
+        self.log("success", f"Target is online! [{response.status_code}] -> {url}")
+
 
         # --- Step 1: Discover Endpoints (Crawler) ---
         self.log("info", "Crawling target for endpoints...")
@@ -110,8 +109,38 @@ class ScannerEngine:
                 break
 
         if targets_to_scan:
+            # ── Parallel endpoint pre-filter ───────────────────────────────
+            # Probe all candidates in parallel before spawning scanner workers.
+            # Dead/unreachable endpoints are dropped early — scanners never touch them.
+            # Results are cached in utils._alive_cache so per-scanner checks are free.
+            self.log("info", f"Pre-filtering {len(targets_to_scan)} endpoints for liveness...")
+            import utils as _utils
+            from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _asc
+
+            alive_targets = []
+            with _TPE(max_workers=60) as pre_ex:
+                future_map = {pre_ex.submit(_utils.check_endpoint_alive, u): u
+                              for u in targets_to_scan}
+                for fut in _asc(future_map):
+                    if self.should_stop:
+                        break
+                    url_checked = future_map[fut]
+                    try:
+                        if fut.result():
+                            alive_targets.append(url_checked)
+                    except Exception:
+                        pass
+
+            if alive_targets:
+                skipped = len(targets_to_scan) - len(alive_targets)
+                if skipped:
+                    self.log("info", f"Skipped {skipped} unreachable endpoints. Scanning {len(alive_targets)} alive targets.")
+                targets_to_scan = alive_targets
+            # ──────────────────────────────────────────────────────────────
+
             self.log("info", f"Selected {len(targets_to_scan)} unique endpoints for parallel scanning.")
-            
+
+
             def scan_endpoint_worker(target_url):
                 if self.should_stop: return {}
                 

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webseeker-pro"
+version = "1.0.0"
+description = "Advanced Agentic Security Scanner and Dashboard"
+readme = "README.md"
+authors = [
+    { name = "Santhosh Kumar", email = "santhosh@example.com" }
+]
+requires-python = ">=3.9"
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "rich",
+    "flask"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]

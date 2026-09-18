@@ -281,41 +281,59 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
 
         // --- Render Logic ---
         document.addEventListener('DOMContentLoaded', () => {
-            initDashboard();
-            renderFindings(DATA.findings);
-            initChart();
+            try {
+                initDashboard();
+                renderFindings(DATA.findings || []);
+            } catch (e) {
+                console.error("Dashboard Init Error: ", e);
+            }
+            
+            try {
+                initChart();
+            } catch (e) {
+                console.error("Chart Init Error: ", e);
+            }
         });
 
         function initDashboard() {
+            if (!DATA.stats) return;
+
             // Stats
-            document.getElementById('score-val').textContent = DATA.stats.security_score;
-            document.getElementById('exec-summary').innerHTML = DATA.stats.analysis;
+            document.getElementById('score-val').textContent = DATA.stats.security_score || '0';
+            document.getElementById('exec-summary').innerHTML = DATA.stats.analysis || 'Analysis unavailable.';
             
             // Badge Color
             const gradeColors = {'A': 'bg-emerald-500', 'B': 'bg-blue-500', 'C': 'bg-yellow-500', 'D': 'bg-orange-500', 'F': 'bg-red-500'};
+            const grade = DATA.stats.grade || 'F';
             const gBadge = document.getElementById('grade-badge');
-            gBadge.textContent = 'GRADE ' + (DATA.stats.grade || 'F');
-            gBadge.classList.add(gradeColors[DATA.stats.grade] || 'bg-slate-500', 'text-white', 'border-transparent');
+            if (gBadge) {
+                gBadge.textContent = 'GRADE ' + grade;
+                gBadge.classList.add(gradeColors[grade] || 'bg-slate-500', 'text-white', 'border-transparent');
+            }
 
             // Counts
-            document.getElementById('stat-critical').textContent = DATA.stats.critical;
-            document.getElementById('stat-high').textContent = DATA.stats.high;
-            document.getElementById('stat-medium').textContent = DATA.stats.medium;
-            document.getElementById('stat-total').textContent = DATA.stats.total;
+            document.getElementById('stat-critical').textContent = DATA.stats.critical || 0;
+            document.getElementById('stat-high').textContent = DATA.stats.high || 0;
+            document.getElementById('stat-medium').textContent = DATA.stats.medium || 0;
+            document.getElementById('stat-total').textContent = DATA.stats.total || 0;
 
             // Search
-            document.getElementById('search-input').addEventListener('input', (e) => {
-                const q = e.target.value.toLowerCase();
-                const filtered = DATA.findings.filter(f => 
-                    f.type.toLowerCase().includes(q) || 
-                    f.location.toLowerCase().includes(q) || 
-                    (f.payload && f.payload.toLowerCase().includes(q))
-                );
-                renderFindings(filtered);
-            });
+            const searchInput = document.getElementById('search-input');
+            if (searchInput && DATA.findings) {
+                searchInput.addEventListener('input', (e) => {
+                    const q = e.target.value.toLowerCase();
+                    const filtered = DATA.findings.filter(f => 
+                        (f.type && f.type.toLowerCase().includes(q)) || 
+                        (f.location && f.location.toLowerCase().includes(q)) || 
+                        (f.payload && f.payload.toLowerCase().includes(q))
+                    );
+                    renderFindings(filtered);
+                });
+            }
         }
 
         function filter(sev) {
+            if (!DATA.findings) return;
             if (sev === 'all') {
                 renderFindings(DATA.findings);
             } else {
@@ -325,7 +343,10 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
 
         function renderFindings(list) {
             const container = document.getElementById('findings-list');
-            document.getElementById('finding-count-badge').textContent = list.length;
+            const counter = document.getElementById('finding-count-badge');
+            
+            if (!container) return;
+            if (counter) counter.textContent = list.length;
             
             if (list.length === 0) {
                 container.innerHTML = '<div class="p-8 text-center text-slate-500 italic">No findings match your criteria.</div>';
@@ -336,19 +357,20 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
                 const config = getSevConfig(f.severity);
                 // Unique ID for expansion
                 const id = 'vuln-' + Math.random().toString(36).substr(2, 9);
+                const fixes = DATA.fixes || {};
                 
                 return `
                 <div class="vuln-row transition-colors group">
-                    <div class="grid grid-cols-12 px-4 py-4 items-center cursor-pointer" onclick="toggle('${id}')">
-                        <div class="col-span-2">
-                            <span class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border ${config.bg} ${config.border} ${config.text} text-xs font-bold uppercase shadow-sm">
-                                <i class="fa-solid ${config.icon}"></i> ${f.severity}
+                    <div class="grid grid-cols-12 px-2 sm:px-4 py-4 items-center cursor-pointer" onclick="toggle('${id}')">
+                        <div class="col-span-3 sm:col-span-2">
+                            <span class="inline-flex items-center gap-1 sm:gap-2 px-1.5 sm:px-2.5 py-1 rounded-md border ${config.bg} ${config.border} ${config.text} text-[10px] sm:text-xs font-bold uppercase shadow-sm">
+                                <i class="fa-solid ${config.icon}"></i> <span class="hidden sm:inline">${f.severity}</span>
                             </span>
                         </div>
-                        <div class="col-span-3 text-sm font-semibold text-white group-hover:text-cyber transition-colors">
+                        <div class="col-span-4 sm:col-span-3 text-xs sm:text-sm font-semibold text-white group-hover:text-cyber transition-colors truncate">
                             ${escapeHtml(f.type)}
                         </div>
-                        <div class="col-span-6 text-xs font-mono text-slate-400 truncate pr-4">
+                        <div class="col-span-4 sm:col-span-6 text-[10px] sm:text-xs font-mono text-slate-400 truncate pr-2 sm:pr-4">
                             ${escapeHtml(f.location)}
                         </div>
                         <div class="col-span-1 text-right">
@@ -357,27 +379,27 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
                     </div>
                     
                     <!-- Expanded Details -->
-                    <div id="${id}" class="hidden bg-slate-950/50 border-y border-slate-800/50 px-4 py-6">
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pl-2 border-l-2 border-slate-700 ml-2">
+                    <div id="${id}" class="hidden bg-slate-950/50 border-y border-slate-800/50 px-2 sm:px-4 py-4 sm:py-6 overflow-hidden">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 pl-2 border-l-2 border-slate-700 ml-1 sm:ml-2">
                             <div class="space-y-4">
                                 <div>
-                                    <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Impact Analysis</h4>
-                                    <p class="text-sm text-slate-300 leading-relaxed">${escapeHtml(f.impact || 'Unknown impact.')}</p>
+                                    <h4 class="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Impact Analysis</h4>
+                                    <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">${escapeHtml(f.impact || 'Unknown impact.')}</p>
                                 </div>
-                                <div class="bg-black/40 rounded border border-slate-800 p-3">
-                                    <h4 class="text-[10px] font-bold text-red-400 uppercase mb-2"><i class="fa-solid fa-bug mr-1"></i> Payload Evidence</h4>
-                                    <code class="text-xs font-mono text-red-200 break-all block">${escapeHtml(f.payload || 'N/A')}</code>
+                                <div class="bg-black/40 rounded border border-slate-800 p-2 sm:p-3 overflow-x-auto w-full">
+                                    <h4 class="text-[9px] sm:text-[10px] font-bold text-red-400 uppercase mb-2"><i class="fa-solid fa-bug mr-1"></i> Payload Evidence</h4>
+                                    <code class="text-[10px] sm:text-xs font-mono text-red-200 whitespace-pre-wrap word-break block">${escapeHtml(f.payload || 'N/A')}</code>
                                 </div>
                             </div>
                             
                             <div class="space-y-4">
                                 <div>
-                                    <h4 class="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Remediation Strategy</h4>
-                                    <p class="text-sm text-slate-300">${escapeHtml(f.recommendation || DATA.fixes[f.type]?.recommendation || 'Review code manually.')}</p>
+                                    <h4 class="text-[10px] sm:text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Remediation Strategy</h4>
+                                    <p class="text-xs sm:text-sm text-slate-300">${escapeHtml(f.recommendation || (fixes[f.type] ? fixes[f.type].recommendation : '') || 'Review code manually.')}</p>
                                 </div>
-                                <div class="p-3 rounded bg-blue-900/10 border border-blue-500/20">
-                                    <h4 class="text-[10px] font-bold text-blue-400 uppercase mb-2">Technical Guidance</h4>
-                                    <pre class="text-[10px] font-mono text-blue-200 overflow-x-auto"><code>${escapeHtml(DATA.fixes[f.type]?.secure_code || '# Secure coding pattern not available')}</code></pre>
+                                <div class="p-2 sm:p-3 rounded bg-blue-900/10 border border-blue-500/20 overflow-x-auto w-full">
+                                    <h4 class="text-[9px] sm:text-[10px] font-bold text-blue-400 uppercase mb-2">Technical Guidance</h4>
+                                    <pre class="text-[9px] sm:text-[10px] font-mono text-blue-200"><code>${escapeHtml((fixes[f.type] ? fixes[f.type].secure_code : '') || '# Secure coding pattern not available')}</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -390,6 +412,7 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
         function toggle(id) {
             const el = document.getElementById(id);
             const icon = document.getElementById('icon-' + id);
+            if (!el || !icon) return;
             
             if (el.classList.contains('hidden')) {
                 el.classList.remove('hidden');
@@ -401,14 +424,18 @@ def generate_report(user, url, vulnerabilities, scan_summary=None):
         }
 
         function initChart() {
-            const ctx = document.getElementById('vulnChart').getContext('2d');
+            const canvas = document.getElementById('vulnChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (!DATA.stats) return;
+
             new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels: ['Critical', 'High', 'Medium', 'Low'],
                     datasets: [{
                         label: 'Count',
-                        data: [DATA.stats.critical, DATA.stats.high, DATA.stats.medium, DATA.stats.low],
+                        data: [DATA.stats.critical || 0, DATA.stats.high || 0, DATA.stats.medium || 0, DATA.stats.low || 0],
                         backgroundColor: ['#ef4444', '#f97316', '#eab308', '#3b82f6'],
                         borderRadius: 4,
                         maxBarThickness: 40
